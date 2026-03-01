@@ -142,7 +142,6 @@ export class GeminiLiveAPI {
     this.enableAffectiveDialog = true; // Default affective dialog
     this.voiceName = "Puck"; // Default voice
     this.temperature = 1.0; // Default temperature
-    this.proactivity = { proactiveAudio: true }; // Proactivity config
     this.inputAudioTranscription = false;
     this.outputAudioTranscription = false;
     this.enableFunctionCalls = false;
@@ -205,11 +204,6 @@ export class GeminiLiveAPI {
   setVoice(voiceName) {
     console.log("setting voice: ", voiceName);
     this.voiceName = voiceName;
-  }
-
-  setProactivity(proactivity) {
-    console.log("setting proactivity: ", proactivity);
-    this.proactivity = proactivity;
   }
 
   setInputAudioTranscription(enabled) {
@@ -367,7 +361,7 @@ export class GeminiLiveAPI {
         },
         system_instruction: { parts: [{ text: this.systemInstructions }] },
         tools: { function_declarations: tools },
-        proactivity: this.proactivity,
+        // proactivity removed
 
         realtime_input_config: {
           automatic_activity_detection: this.automaticActivityDetection,

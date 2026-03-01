@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 # Configuration
 PROJECT_ID = get_project_id()
 LOCATION = os.getenv("LOCATION", "us-central1")
-MODEL = os.getenv("MODEL", "gemini-live-2.5-flash-native-audio")
+MODEL = os.getenv("MODEL", "gemini-2.5-flash-native-audio-preview-12-2025")
 # Use a very long timeout for dev
 SESSION_TIME_LIMIT = int(os.getenv("SESSION_TIME_LIMIT", "180"))
 RECAPTCHA_SITE_KEY = os.getenv("RECAPTCHA_SITE_KEY")
@@ -66,10 +66,10 @@ DEV_MODE = os.getenv("DEV_MODE", "true") == "true"
 app = FastAPI()
 
 # Initialize Recaptcha Validator
-recaptcha_validator = RecaptchaValidator(
-    project_id=PROJECT_ID,
-    recaptcha_key=RECAPTCHA_SITE_KEY
-)
+# recaptcha_validator = RecaptchaValidator(
+#     project_id=PROJECT_ID,
+#     recaptcha_key=RECAPTCHA_SITE_KEY
+# )
 
 def get_fingerprint_key(request: Request):
     return generate_fingerprint(request)

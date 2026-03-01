@@ -200,3 +200,7 @@ Once you're happy with your changes, use the **One-Click Deployment** or use Ant
 | **Audio** | 1,324       | $12.00 / 1M     | ~$0.0159                |
 | **Text**  | 518         | $2.00 / 1M      | ~$0.0010                |
 | **Total** | **1,842**   |                 | **~$0.017 (1.7 cents)** |
+
+
+## run server
+export $(cat .env | xargs) && python3 -m server.main

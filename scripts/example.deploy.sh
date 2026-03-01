@@ -20,7 +20,7 @@ cd "$(dirname "$0")/.."
 PROJECT_ID="your-project-id"
 SERVICE_NAME="immersive-language-learning"
 REGION="us-central1"
-MODEL="gemini-live-2.5-flash-native-audio"
+MODEL="gemini-2.0-flash-exp"
 
 RECAPTCHA_SITE_KEY="your-recaptcha-site-key"
 

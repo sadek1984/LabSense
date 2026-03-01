@@ -36,7 +36,14 @@ class GeminiLive:
         print(f"  Input Sample Rate: {input_sample_rate}")
         
         # Initialize client
-        self.client = genai.Client(vertexai=True, project=project_id, location=location)
+        # self.client = genai.Client(vertexai=True, project=project_id, location=location)
+        import os
+        from google import genai
+
+        self.client = genai.Client(
+            api_key=os.environ.get("GEMINI_API_KEY"),
+            http_options={"api_version": "v1alpha"}
+        )
         self.tool_mapping = {}
 
     def register_tool(self, func: Callable):
@@ -88,12 +95,12 @@ class GeminiLive:
                 except (KeyError, IndexError, TypeError):
                     pass
             
-            if "proactivity" in setup_config:
-                try:
-                    proactive_audio = setup_config["proactivity"].get("proactiveAudio", False)
-                    config_args["proactivity"] = types.ProactivityConfig(proactive_audio=proactive_audio)
-                except (AttributeError, TypeError):
-                    pass
+            # if "proactivity" in setup_config:
+            #     try:
+            #         proactive_audio = setup_config["proactivity"].get("proactiveAudio", False)
+            #         config_args["proactivity"] = types.ProactivityConfig(proactive_audio=proactive_audio)
+            #     except (AttributeError, TypeError):
+            #         pass
 
             if "tools" in setup_config:
                 try:
