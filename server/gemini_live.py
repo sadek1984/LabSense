@@ -46,6 +46,15 @@ class GeminiLive:
         )
         self.tool_mapping = {}
 
+        # في __init__ بعد self.tool_mapping = {}
+        from server.lars_service import query_lars
+
+        # سجّل LARS كـ tool
+        @self.register_tool
+        def search_pesticide_data(question: str) -> str:
+            """البحث في بيانات مبيدات المختبر"""
+            return query_lars(question)
+
     def register_tool(self, func: Callable):
         self.tool_mapping[func.__name__] = func
         return func
