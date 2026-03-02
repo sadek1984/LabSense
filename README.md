@@ -204,3 +204,5 @@ Once you're happy with your changes, use the **One-Click Deployment** or use Ant
 
 ## run server
 export $(cat .env | xargs) && python3 -m server.main
+
+
