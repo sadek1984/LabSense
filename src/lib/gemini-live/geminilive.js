@@ -363,9 +363,9 @@ export class GeminiLiveAPI {
         tools: { function_declarations: tools },
         // proactivity removed
 
-        realtime_input_config: {
-          automatic_activity_detection: this.automaticActivityDetection,
-        },
+
+
+
       },
     };
 
@@ -388,7 +388,7 @@ export class GeminiLiveAPI {
 
     // Add affective dialog if enabled
     if (this.enableAffectiveDialog) {
-      sessionSetupMessage.setup.generation_config.enable_affective_dialog = true;
+      // enable_affective_dialog disabled
     }
 
     // Store the setup message for later access

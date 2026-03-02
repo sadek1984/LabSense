@@ -426,6 +426,38 @@ class ViewChat extends HTMLElement {
 
     this.client.addFunction(completeMissionTool);
 
+    // LARS Tool
+    const larsQueryTool = new FunctionCallDefinition(
+      "search_pesticide_data",
+      "Search the pesticide residue database. Call this for any question about samples, violations, or pesticides.",
+      {
+        type: "OBJECT",
+        properties: {
+          question: {
+            type: "STRING",
+            description: "The question in Arabic or English"
+          }
+        },
+        required: ["question"]
+      },
+      ["question"]
+    );
+
+    larsQueryTool.functionToCall = async (args) => {
+      console.log("🔬 [LARS] Query:", args.question);
+      // هنا بتكلم الـ backend
+      const response = await fetch("/api/lars/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: args.question })
+      });
+      const data = await response.json();
+      console.log("🔬 [LARS] Result:", data.answer);
+      return data.answer;
+    };
+
+    this.client.addFunction(larsQueryTool);
+
     // Setup client callbacks for logging
     this.client.onConnectionStarted = () => {
       console.log("🚀 [Gemini] Connection started");
@@ -548,34 +580,27 @@ When the user has successfully achieved the mission objective:
 4. Provide 3 specific takeaways (grammar tips or new words) in the feedback list in ${fromLanguage}.
 `;
           } else {
-            // Immersive Mode Prompt (Default)
+            // LARS Mode
             systemInstruction = `
-ROLEPLAY INSTRUCTION:
-You are acting as **${targetRole}**, a native speaker of ${language}.
-The user is a language learner (native speaker of ${fromLanguage}) trying to: "${missionTitle}" (${missionDesc}).
-Your goal is to play your role (${targetRole}) naturally. Do not act as an AI assistant. Act as the person.
-Speak in the accent and tone of the role.
+          You are LARS — Laboratory Analysis and Risk System.
+          You are a bilingual AI assistant for food safety laboratories in Al-Qassim, Saudi Arabia.
 
-INTERACTION GUIDELINES:
-1. It is up to you if you want to directly speak back, or speak out what you think the user is saying in your native language before responding.
-2. Utilising the proactive audio feature, do not respond until it is necessary (i.e. the user has finished their turn).
-3. Be helpful but strict about language practice. It is just like speaking to a multilingual person.
-4. You cannot proceed without the user speaking the target language (${language}) themselves.
-5. If you need to give feedback, corrections, or translations, use the user's native language (${fromLanguage}).
+          Respond in the same language the user speaks — Arabic or English.
+          تحدث بنفس لغة المستخدم — عربي أو إنجليزي.
 
-NO FREE RIDES POLICY:
-If the user asks for help in ${fromLanguage} (e.g., "please can you repeat"), you MUST NOT simply answer.
-Instead, force them to say the phrase in the target language (${language}).
-For example, say: "You mean to say [Insert Translation in ${language}]" (provided in ${fromLanguage}) and wait for them to repeat it.
-Do not continue the conversation until they attempt the phrase in ${language}.
+          Your mission: "${missionTitle}" — ${missionDesc}
 
-MISSION COMPLETION:
-When the user has successfully achieved the mission objective declared in the scenario:
-1. Speak a brief congratulatory message (in character) and say goodbye.
-2. THEN call the "complete_mission" tool.
-3. Assign a score based on strict criteria: 1 for struggling/English reliance (Tiro), 2 for capable but imperfect (Proficiens), 3 for native-level fluency (Peritus).
-4. Provide 3 specific pointers or compliments in the feedback list (in the user's native language: ${fromLanguage}).
-`;
+          For any data question, call the search_pesticide_data tool immediately.
+          لأي سؤال عن البيانات، استدعِ أداة search_pesticide_data فوراً.
+
+          After getting results, read the key numbers clearly and concisely.
+          Never fabricate data — all answers come from the database only.
+
+          MISSION COMPLETION:
+          When the user's question is fully answered, call the "complete_mission" tool.
+          Score: 3 always (task-based, not language-based).
+          Feedback: 3 insights about what was found in the data.
+          `;
           }
 
           console.log(
