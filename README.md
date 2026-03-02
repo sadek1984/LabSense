@@ -205,4 +205,5 @@ Once you're happy with your changes, use the **One-Click Deployment** or use Ant
 ## run server
 export $(cat .env | xargs) && python3 -m server.main
 
-
+## The model used by the Google API in your project is 
+gemini-2.5-flash-native-audio-preview-12-2025
