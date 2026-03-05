@@ -207,3 +207,6 @@ export $(cat .env | xargs) && python3 -m server.main
 
 ## The model used by the Google API in your project is 
 gemini-2.5-flash-native-audio-preview-12-2025
+
+## run server
+DEV_MODE=true uvicorn server.main:app --host 0.0.0.0 --port 8080 --reload
