@@ -228,6 +228,26 @@ class ViewChat extends HTMLElement {
             <span style="font-size: 0.85rem; opacity: 0.9; font-style: italic;">You start the conversation!</span>
           </button>
 
+          <!-- Camera Snap Button (LARS Vision) -->
+           <button id="camera-btn" style="
+             display: none;
+             background: rgba(0,0,0,0.06);
+             color: var(--color-text-primary);
+             border: 2px dashed rgba(0,0,0,0.15);
+             padding: 12px 24px;
+             border-radius: var(--radius-lg);
+             cursor: pointer;
+             font-family: var(--font-body);
+             font-weight: 700;
+             font-size: 0.95rem;
+             align-items: center;
+             gap: 8px;
+             transition: all 0.3s ease;
+           " onmouseover="this.style.background='rgba(0,0,0,0.1)'; this.style.borderColor='var(--color-accent-primary)'"
+             onmouseout="this.style.background='rgba(0,0,0,0.06)'; this.style.borderColor='rgba(0,0,0,0.15)'">
+             📸 Scan Report
+           </button>
+
            <p id="connection-status" style="
              margin-top: var(--spacing-sm);
              font-size: 0.9rem;
@@ -580,7 +600,7 @@ When the user has successfully achieved the mission objective:
 4. Provide 3 specific takeaways (grammar tips or new words) in the feedback list in ${fromLanguage}.
 `;
           } else {
-            // LARS Mode
+            // LARS Mode (with Vision capability)
             systemInstruction = `
           You are LARS — Laboratory Analysis and Risk System.
           You are a bilingual AI assistant for food safety laboratories in Al-Qassim, Saudi Arabia.
@@ -595,6 +615,32 @@ When the user has successfully achieved the mission objective:
 
           After getting results, read the key numbers clearly and concisely.
           Never fabricate data — all answers come from the database only.
+
+          === VISION CAPABILITY ===
+          You can SEE images that the user sends (photos from their camera).
+
+          When the user sends a photo of a lab report or sample label:
+          1. READ all visible text: sample codes, sample names, pesticide names,
+             concentrations (mg/kg), MRL limits, pass/fail status.
+          2. TELL the user what you see: "I can see sample [code], [name],
+             tested for [test_type], with [X] pesticides detected..."
+          3. AUTOMATICALLY call search_pesticide_data to cross-reference
+             the data in the database. Use queries like:
+             - "find sample 6433" (using the sample_code you read)
+             - "show results for Local Cumin" (using the sample_name)
+             - "chlorpyrifos violations" (using pesticide names you read)
+          4. COMPARE what you see in the image with database results.
+
+          DATABASE SCHEMA (columns are in English):
+          - sample_code, sample_name, test_type, result (Compliant/Non-Compliant)
+          - contaminant_1 through contaminant_8 (format: "pesticide_name,concentration,MRL_limit")
+          - facility_name, municipality, district (these values are in Arabic)
+          - Sample names are English: "Local Cumin", "Indian Anise", "Parsley", etc.
+          - Pesticide names are English lowercase: "chlorpyrifos", "carbendazim", etc.
+
+          If the user sends a photo WITHOUT asking a question, proactively describe
+          what you see and offer to look it up in the database.
+          === END VISION ===
 
           MISSION COMPLETION:
           When the user's question is fully answered, call the "complete_mission" tool.
@@ -675,6 +721,11 @@ When the user has successfully achieved the mission objective:
           statusEl.textContent = "Connected and ready to speak";
           statusEl.style.color = "#4CAF50"; // Success green
 
+          // Show camera button for LARS mode (not language learning mode)
+          if (mode !== "immergo_teacher") {
+            const camBtn = this.querySelector("#camera-btn");
+            if (camBtn) camBtn.style.display = "flex";
+          }
           // Play start sound
           const startSound = new Audio("/start-bell.mp3");
           startSound.volume = 0.6;
@@ -706,6 +757,91 @@ When the user has successfully achieved the mission objective:
         }
       }
     });
+
+    // ===== CAMERA SNAP (LARS Vision) =====
+    const cameraBtn = this.querySelector("#camera-btn");
+
+    cameraBtn.addEventListener("click", async () => {
+      try {
+        console.log("📸 [LARS] Camera snap requested");
+
+        // 1. Find built-in camera
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const builtInCam = devices.find(d =>
+          d.kind === "videoinput" &&
+          (d.label.toLowerCase().includes("facetime") ||
+            d.label.toLowerCase().includes("built-in") ||
+            d.label.toLowerCase().includes("isight"))
+        );
+
+        let constraints = { video: { width: { ideal: 1280 }, height: { ideal: 960 } } };
+        if (builtInCam) {
+          console.log("📸 Using built-in camera:", builtInCam.label);
+          constraints.video.deviceId = { exact: builtInCam.deviceId };
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+        // 2. Show a temporary live preview so user can aim
+        const preview = document.createElement("video");
+        preview.srcObject = stream;
+        preview.setAttribute("playsinline", "true");
+        preview.style.cssText = `
+          position: fixed; bottom: 120px; right: 20px; 
+          width: 320px; height: 240px; border-radius: 12px;
+          border: 3px solid #4CAF50; z-index: 999;
+          object-fit: cover; background: black;
+        `;
+        document.body.appendChild(preview);
+        await preview.play();
+
+        // 3. Update button to "Snap Now"
+        cameraBtn.innerHTML = "🔴 Tap to Capture!";
+        cameraBtn.style.borderColor = "#f44336";
+        cameraBtn.style.background = "rgba(244,67,54,0.1)";
+
+        // 4. Wait for user to click again to capture (or auto-capture after 3s)
+        await new Promise(resolve => {
+          const snapNow = () => {
+            cameraBtn.removeEventListener("click", snapNow);
+            clearTimeout(autoSnap);
+            resolve();
+          };
+          cameraBtn.addEventListener("click", snapNow, { once: true });
+          const autoSnap = setTimeout(resolve, 3000); // auto-snap after 3s
+        });
+
+        // 5. Capture frame
+        const canvas = document.createElement("canvas");
+        canvas.width = preview.videoWidth;
+        canvas.height = preview.videoHeight;
+        canvas.getContext("2d").drawImage(preview, 0, 0);
+
+        // 6. Cleanup: stop camera + remove preview
+        stream.getTracks().forEach(t => t.stop());
+        preview.remove();
+
+        // 7. Send image
+        const base64Data = canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
+        this.client.sendImageMessage(base64Data, "image/jpeg");
+        console.log("📸 [LARS] Image sent! Size:", Math.round(base64Data.length / 1024), "KB");
+
+        // 8. Visual feedback
+        cameraBtn.innerHTML = "✅ Photo Sent — Now ask about it!";
+        cameraBtn.style.borderColor = "#4CAF50";
+        cameraBtn.style.background = "rgba(76,175,80,0.1)";
+        setTimeout(() => {
+          cameraBtn.innerHTML = "📸 Scan Report";
+          cameraBtn.style.borderColor = "rgba(0,0,0,0.15)";
+          cameraBtn.style.background = "rgba(0,0,0,0.06)";
+        }, 3000);
+
+      } catch (err) {
+        console.error("📸 [LARS] Camera error:", err);
+        alert("Camera error: " + err.message);
+      }
+    });
+
   }
 
   async getRecaptchaToken() {

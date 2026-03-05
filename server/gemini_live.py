@@ -46,14 +46,22 @@ class GeminiLive:
         )
         self.tool_mapping = {}
 
-        # في __init__ بعد self.tool_mapping = {}
-        from server.lars_service import query_lars
-
         # سجّل LARS كـ tool
-        @self.register_tool
-        def search_pesticide_data(question: str) -> str:
-            """البحث في بيانات مبيدات المختبر"""
-            return query_lars(question)
+        try:
+            from server.lars_service import query_lars
+
+            @self.register_tool
+            def search_pesticide_data(question: str) -> str:
+                """البحث في بيانات مبيدات المختبر"""
+                return query_lars(question)
+            print("✅ LARS tool registered successfully")
+        except Exception as e:
+            print(f"⚠️ LARS tool not available: {e}")
+            # Register a fallback so the session still works
+            @self.register_tool
+            def search_pesticide_data(question: str) -> str:
+                """Search pesticide data"""
+                return "LARS database not available in this environment. But I can still read images."
 
     def register_tool(self, func: Callable):
         self.tool_mapping[func.__name__] = func
@@ -133,7 +141,16 @@ class GeminiLive:
         if "input_audio_transcription" in setup_config:
             print("💬 input_audio_transcription ENABLED")
             config_args["input_audio_transcription"] = types.AudioTranscriptionConfig()
-
+        
+        # Enable vision: accept image input at medium resolution for camera snap
+        try:
+            config_args["realtime_input_config"] = types.RealtimeInputConfig(
+                media_resolution=types.MediaResolution.MEDIA_RESOLUTION_MEDIUM
+            )
+            print("📸 Vision enabled: MEDIA_RESOLUTION_MEDIUM")
+        except Exception as e:
+            logger.warning(f"Could not set media_resolution (SDK may not support it): {e}")
+        
         config = types.LiveConnectConfig(**config_args)
         
         # Connect using the new async client interface
@@ -150,24 +167,50 @@ class GeminiLive:
                     pass
 
             async def send_video():
-                # Not heavily used in Immergo yet, but good to have
+                # Disabled — images now go through send_text as client_content
                 try:
                     while True:
                         chunk = await video_input_queue.get()
-                        await session.send_realtime_input(
-                            video=types.Blob(data=chunk, mime_type="image/jpeg")
-                        )
+                        # Do nothing — images handled in send_text
+                        pass
                 except asyncio.CancelledError:
                     pass
-
             async def send_text():
                 try:
                     while True:
                         text = await text_input_queue.get()
+                        # Check if this is an image message from camera
+                        try:
+                            parsed = json.loads(text)
+                            if isinstance(parsed, dict) and "_image" in parsed:
+                                import base64 as b64
+                                image_bytes = b64.b64decode(parsed["_image"])
+                                mime_type = parsed.get("_mime", "image/jpeg")
+                                try:
+                                    await session.send_client_content(
+                                        turns=types.Content(
+                                            role="user",
+                                            parts=[
+                                                types.Part(
+                                                    inline_data=types.Blob(
+                                                        data=image_bytes,
+                                                        mime_type=mime_type
+                                                    )
+                                                ),
+                                                types.Part(text="I just sent you a photo. Describe what you see.")
+                                            ]
+                                        ),
+                                        turn_complete=True
+                                    )
+                                    print(f"📸 Image sent to Gemini via send_client_content: {len(image_bytes)} bytes")
+                                except Exception as img_err:
+                                    print(f"❌ Image send FAILED: {type(img_err).__name__}: {img_err}")
+                                continue
+                        except (json.JSONDecodeError, ValueError):
+                            pass
                         await session.send(input=text, end_of_turn=True)
                 except asyncio.CancelledError:
                     pass
-
             event_queue = asyncio.Queue()
 
             async def receive_loop():

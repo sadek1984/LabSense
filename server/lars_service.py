@@ -82,10 +82,9 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # Singleton: Initialize LARS engine once
 # ---------------------------------------------------------------------------
-_lars_engine: Optional[CoreQueryEngine] = None
+_lars_engine = None
 
-
-def get_lars_engine() -> CoreQueryEngine:
+def get_lars_engine():
     """
     Lazy-initialize the CoreQueryEngine singleton.
     This connects to DuckDB and loads all LARS capabilities ONCE.

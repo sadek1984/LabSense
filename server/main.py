@@ -277,15 +277,23 @@ async def websocket_endpoint(websocket: WebSocket, token: Optional[str] = None):
                     try:
                         payload = json.loads(text)
                         if isinstance(payload, dict) and payload.get("type") == "image":
-                            # Handle base64 image
-                            image_data = base64.b64decode(payload["data"])
-                            await video_input_queue.put(image_data)
+                            # OLD handler - DISABLE this, use realtime_input path instead
+                            # image_data = base64.b64decode(payload["data"])
+                            # await video_input_queue.put(image_data)
                             continue
                         elif isinstance(payload, dict) and "realtime_input" in payload:
-                             # Forward realtime input (audio/video chunks)
-                             # The SDK JS sends 'realtime_input' for generic media chunks
-                             # For now we handle simpler case or adapt GeminiLive class
-                             pass
+                             # Forward image as content message via text queue
+                             try:
+                                 media_chunks = payload["realtime_input"].get("media_chunks", [])
+                                 for chunk in media_chunks:
+                                     mime = chunk.get("mime_type", "")
+                                     if mime.startswith("image/"):
+                                         image_msg = json.dumps({"_image": chunk["data"], "_mime": mime})
+                                         await text_input_queue.put(image_msg)
+                                         logger.info(f"📸 Image queued for Gemini: {mime}")
+                             except Exception as e:
+                                 logger.error(f"Error processing realtime_input: {e}")
+                             continue
                     except json.JSONDecodeError:
                         pass
                     
