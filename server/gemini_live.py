@@ -47,22 +47,23 @@ class GeminiLive:
         self.tool_mapping = {}
 
         # سجّل LARS كـ tool
-        try:
-            from server.lars_service import query_lars
+        # try:
+        #     from server.lars_service import query_lars
 
-            @self.register_tool
-            def search_pesticide_data(question: str) -> str:
-                """البحث في بيانات مبيدات المختبر"""
-                return query_lars(question)
-            print("✅ LARS tool registered successfully")
-        except Exception as e:
-            print(f"⚠️ LARS tool not available: {e}")
-            # Register a fallback so the session still works
-            @self.register_tool
-            def search_pesticide_data(question: str) -> str:
-                """Search pesticide data"""
-                return "LARS database not available in this environment. But I can still read images."
+        #     @self.register_tool
+        #     def search_pesticide_data(question: str) -> str:
+        #         """البحث في بيانات مبيدات المختبر"""
+        #         return query_lars(question)
+        #     print("✅ LARS tool registered successfully")
+        # except Exception as e:
+        #     print(f"⚠️ LARS tool not available: {e}")
+        #     # Register a fallback so the session still works
+        #     @self.register_tool
+        #     def search_pesticide_data(question: str) -> str:
+        #         """Search pesticide data"""
+        #         return "LARS database not available in this environment. But I can still read images."
 
+        pass
     def register_tool(self, func: Callable):
         self.tool_mapping[func.__name__] = func
         return func
@@ -179,9 +180,11 @@ class GeminiLive:
                 try:
                     while True:
                         text = await text_input_queue.get()
-                        # Check if this is an image message from camera
+                        
                         try:
                             parsed = json.loads(text)
+                            
+                            # Handle image messages
                             if isinstance(parsed, dict) and "_image" in parsed:
                                 import base64 as b64
                                 image_bytes = b64.b64decode(parsed["_image"])
@@ -206,9 +209,48 @@ class GeminiLive:
                                 except Exception as img_err:
                                     print(f"❌ Image send FAILED: {type(img_err).__name__}: {img_err}")
                                 continue
-                        except (json.JSONDecodeError, ValueError):
+                            
+                            # NEW: Handle tool responses from client
+                            if isinstance(parsed, dict) and "tool_response" in parsed:
+                                print(f"🔧 Received tool response from client: {parsed}")
+                                
+                                # Convert to the format Gemini expects
+                                tool_response_data = parsed["tool_response"]
+                                
+                                # Create FunctionResponse objects
+                                function_responses = []
+                                
+                                # Handle different possible formats
+                                if "function_responses" in tool_response_data:
+                                    # Already in the right format
+                                    for resp in tool_response_data["function_responses"]:
+                                        function_responses.append(types.FunctionResponse(
+                                            name=resp.get("name", "search_pesticide_data"),
+                                            id=resp.get("id", resp.get("response_id", "")),
+                                            response=resp.get("response", {})
+                                        ))
+                                elif "id" in tool_response_data and "response" in tool_response_data:
+                                    # Single response format
+                                    function_responses.append(types.FunctionResponse(
+                                        name=tool_response_data.get("name", "search_pesticide_data"),
+                                        id=tool_response_data["id"],
+                                        response=tool_response_data["response"]
+                                    ))
+                                
+                                if function_responses:
+                                    print(f"📤 Forwarding {len(function_responses)} tool responses to Gemini")
+                                    await session.send_tool_response(function_responses=function_responses)
+                                continue
+                                
+                        except json.JSONDecodeError:
+                            # Not JSON, treat as regular text
                             pass
-                        await session.send(input=text, end_of_turn=True)
+                        
+                        # Regular text message
+                        if text.strip():  # Only send non-empty messages
+                            print(f"💬 Sending text to Gemini: {text[:50]}...")
+                            await session.send(input=text, end_of_turn=True)
+                            
                 except asyncio.CancelledError:
                     pass
             event_queue = asyncio.Queue()
@@ -271,15 +313,21 @@ class GeminiLive:
                                             audio_interrupt_callback()
                                     await event_queue.put({"type": "interrupted"})
 
+                            # In the receive_loop function, modify the tool_call section:
+
                             if tool_call:
                                 function_responses = []
                                 client_tool_calls = []
-
+                                
+                                print(f"🎯 Received tool_call from Gemini: {tool_call}")
+                                
                                 for fc in tool_call.function_calls:
                                     func_name = fc.name
                                     args = fc.args or {}
+                                    print(f"  - Function: {func_name}, ID: {fc.id}, Args: {args}")
                                     
                                     if func_name in self.tool_mapping:
+                                        # Server-side tool handling (if any)
                                         try:
                                             tool_func = self.tool_mapping[func_name]
                                             if inspect.iscoroutinefunction(tool_func):
@@ -287,32 +335,35 @@ class GeminiLive:
                                             else:
                                                 loop = asyncio.get_running_loop()
                                                 result = await loop.run_in_executor(None, lambda: tool_func(**args))
+                                            
+                                            function_responses.append(types.FunctionResponse(
+                                                name=func_name,
+                                                id=fc.id,
+                                                response={"result": result}
+                                            ))
                                         except Exception as e:
-                                            result = f"Error: {e}"
-                                        
-                                        function_responses.append(types.FunctionResponse(
-                                            name=func_name,
-                                            id=fc.id,
-                                            response={"result": result}
-                                        ))
-                                        await event_queue.put({"type": "tool_call", "name": func_name, "args": args, "result": result})
+                                            print(f"❌ Error executing server tool {func_name}: {e}")
                                     else:
-                                        # Unknown tool, assume client-side
+                                        # Forward to client - use the EXACT format the client expects
                                         client_tool_calls.append({
                                             "name": fc.name,
                                             "args": args,
                                             "id": fc.id
                                         })
+                                        print(f"  ⏩ Forwarding {func_name} to client with ID {fc.id}")
                                 
                                 if client_tool_calls:
-                                    # Forward to client
-                                    await event_queue.put({
+                                    # Send to client via event queue
+                                    tool_call_event = {
                                         "toolCall": {
                                             "functionCalls": client_tool_calls
                                         }
-                                    })
-
+                                    }
+                                    print(f"📤 Sending tool call to client: {tool_call_event}")
+                                    await event_queue.put(tool_call_event)
+                                
                                 if function_responses:
+                                    print(f"📤 Sending {len(function_responses)} tool responses back to Gemini")
                                     await session.send_tool_response(function_responses=function_responses)
 
                 except Exception as e:

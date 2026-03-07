@@ -341,7 +341,7 @@ class ViewChat extends HTMLElement {
         new CustomEvent("navigate", {
           bubbles: true,
           detail: { view: "summary", result: result },
-        })
+        }),
       );
     };
 
@@ -363,7 +363,7 @@ class ViewChat extends HTMLElement {
         new CustomEvent("navigate", {
           bubbles: true,
           detail: { view: "mission-selector" },
-        })
+        }),
       );
     });
 
@@ -400,7 +400,7 @@ class ViewChat extends HTMLElement {
         },
         required: ["score", "feedback_pointers"],
       },
-      ["score", "feedback_pointers"]
+      ["score", "feedback_pointers"],
     );
 
     completeMissionTool.functionToCall = (args) => {
@@ -418,7 +418,7 @@ class ViewChat extends HTMLElement {
       const level = levels[args.score] || "Proficiens";
 
       console.log(
-        "⏳ [App] Waiting for final audio to play before ending session..."
+        "⏳ [App] Waiting for final audio to play before ending session...",
       );
 
       // Delay cleanup to allow the agent's congratulatory message to be heard
@@ -439,13 +439,14 @@ class ViewChat extends HTMLElement {
           new CustomEvent("navigate", {
             bubbles: true,
             detail: { view: "summary", result: result },
-          })
+          }),
         );
       }, 2500); // 2.5 seconds delay
     };
 
     this.client.addFunction(completeMissionTool);
-
+    // Save reference for use inside tool callbacks
+    const geminiClient = this.client;
     // LARS Tool
     const larsQueryTool = new FunctionCallDefinition(
       "search_pesticide_data",
@@ -455,25 +456,46 @@ class ViewChat extends HTMLElement {
         properties: {
           question: {
             type: "STRING",
-            description: "The question in Arabic or English"
-          }
+            description: "The question in Arabic or English",
+          },
         },
-        required: ["question"]
+        required: ["question"],
       },
-      ["question"]
+      ["question"],
     );
-
-    larsQueryTool.functionToCall = async (args) => {
+    larsQueryTool.functionToCall = (args) => {
       console.log("🔬 [LARS] Query:", args.question);
-      // هنا بتكلم الـ backend
-      const response = await fetch("/api/lars/query", {
+      const toolCallId = args._toolCallId;
+
+      fetch("/api/lars/query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: args.question })
-      });
-      const data = await response.json();
-      console.log("🔬 [LARS] Result:", data.answer);
-      return data.answer;
+      })
+        .then(res => res.json())
+        .then(data => {
+          const answer = data.answer || data.error || "No results found.";
+          console.log("🔬 [LARS] Result:", answer);
+
+          // Send as a structured response
+          geminiClient.sendToolResponse(
+            toolCallId,
+            "search_pesticide_data",
+            {
+              result: answer  // Gemini expects the result in this format
+            }
+          );
+        })
+        .catch(err => {
+          console.error("🔬 [LARS] Error:", err);
+          geminiClient.sendToolResponse(
+            toolCallId,
+            "search_pesticide_data",
+            {
+              error: "Database query failed: " + err.message
+            }
+          );
+        });
     };
 
     this.client.addFunction(larsQueryTool);
@@ -501,7 +523,9 @@ class ViewChat extends HTMLElement {
         console.log("🛠️ [Gemini] Tool Call received:", response.data);
         if (response.data.functionCalls) {
           response.data.functionCalls.forEach((fc) => {
-            this.client.callFunction(fc.name, fc.args);
+            // Pass the tool call ID so we can send the response back
+            const argsWithId = { ...fc.args, _toolCallId: fc.id };
+            this.client.callFunction(fc.name, argsWithId);
           });
         }
       } else if (
@@ -511,7 +535,7 @@ class ViewChat extends HTMLElement {
         if (transcriptEl) {
           transcriptEl.addInputTranscript(
             response.data.text,
-            response.data.finished
+            response.data.finished,
           );
         }
       } else if (
@@ -521,7 +545,7 @@ class ViewChat extends HTMLElement {
         if (transcriptEl) {
           transcriptEl.addOutputTranscript(
             response.data.text,
-            response.data.finished
+            response.data.finished,
           );
         }
       }
@@ -539,7 +563,7 @@ class ViewChat extends HTMLElement {
       isSpeaking = !isSpeaking;
 
       if (isSpeaking) {
-        micBtn.classList.add('active');
+        micBtn.classList.add("active");
         // Change to Stop/Listening state
         micBtn.innerHTML = `
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>
@@ -547,7 +571,7 @@ class ViewChat extends HTMLElement {
         `;
       } else {
         // Was active, so stopping now
-        micBtn.classList.remove('active');
+        micBtn.classList.remove("active");
         doEndSession();
         return; // Stop here, don't execute start logic
       }
@@ -610,37 +634,58 @@ When the user has successfully achieved the mission objective:
 
           Your mission: "${missionTitle}" — ${missionDesc}
 
-          For any data question, call the search_pesticide_data tool immediately.
-          لأي سؤال عن البيانات، استدعِ أداة search_pesticide_data فوراً.
+          === CORE RULE ===
+          For ANY question about pesticide data, samples, violations, risk, or lab results:
+          Call search_pesticide_data IMMEDIATELY with a natural language question.
+          Do NOT answer from your own knowledge. Do NOT say "I don't have data."
+          The LARS database handles ALL analysis — just forward the question.
 
-          After getting results, read the key numbers clearly and concisely.
-          Never fabricate data — all answers come from the database only.
+          === HOW TO USE THE TOOL ===
+          The search_pesticide_data tool accepts natural language questions. Examples:
+          - "how many potato samples were tested"
+          - "risk assessment for potato"
+          - "quality index for cucumber"  
+          - "health risk index for tomato"
+          - "what pesticides found in cumin samples"
+          - "violations in leafy greens"
+          - "compare tomato and cucumber violation rates"
+          - "which vegetables have the highest contamination"
+          - "chlorpyrifos violations across all samples"
+          - "samples with more than 3 pesticides"
+          
+          You can ask about: sample counts, violations, compliance rates, risk assessment,
+          quality index, health risk index, pesticide statistics, chemical groups,
+          trend analysis, comparisons between commodities, and more.
+          Just phrase it naturally — LARS understands Arabic and English.
 
           === VISION CAPABILITY ===
-          You can SEE images that the user sends (photos from their camera).
+          You can SEE images the user sends from their camera.
 
-          When the user sends a photo of a lab report or sample label:
-          1. READ all visible text: sample codes, sample names, pesticide names,
-             concentrations (mg/kg), MRL limits, pass/fail status.
-          2. TELL the user what you see: "I can see sample [code], [name],
-             tested for [test_type], with [X] pesticides detected..."
-          3. AUTOMATICALLY call search_pesticide_data to cross-reference
-             the data in the database. Use queries like:
-             - "find sample 6433" (using the sample_code you read)
-             - "show results for Local Cumin" (using the sample_name)
-             - "chlorpyrifos violations" (using pesticide names you read)
-          4. COMPARE what you see in the image with database results.
+          WHEN YOU SEE A FOOD ITEM (vegetable, fruit, spice, herb, etc.):
+          1. Identify it: "I can see this is [potato/tomato/cumin/parsley/etc.]"
+          2. Ask the user what they want to know, OR proactively call the tool:
+             - "risk assessment for [identified food]"
+             - "quality index for [identified food]"  
+             - "how many [food] samples and what is the violation rate"
+          3. If user asks follow-up questions about the same food, keep querying.
 
-          DATABASE SCHEMA (columns are in English):
-          - sample_code, sample_name, test_type, result (Compliant/Non-Compliant)
-          - contaminant_1 through contaminant_8 (format: "pesticide_name,concentration,MRL_limit")
-          - facility_name, municipality, district (these values are in Arabic)
-          - Sample names are English: "Local Cumin", "Indian Anise", "Parsley", etc.
-          - Pesticide names are English lowercase: "chlorpyrifos", "carbendazim", etc.
+          WHEN YOU SEE A LAB REPORT OR DOCUMENT:
+          1. Read what you can see (sample name, pesticides, results).
+          2. Use that information to form a natural language query to the tool.
+             Example: if report shows "Cumin - Non-Compliant - chlorpyrifos 0.7":
+             Call tool with "risk assessment for cumin" or "chlorpyrifos in cumin samples"
+          3. Compare what you read in the image with the database results.
 
-          If the user sends a photo WITHOUT asking a question, proactively describe
-          what you see and offer to look it up in the database.
-          === END VISION ===
+          WHEN YOU SEE MULTIPLE FOOD ITEMS:
+          1. Identify each one.
+          2. Call the tool for each to compare risk levels.
+          3. Prioritize which one is higher risk based on the data.
+
+          === VOICE TIPS ===
+          - Keep responses concise for voice — summarize key numbers first.
+          - Round numbers: "about 350 samples" not "347 samples"
+          - Highlight the most important finding first.
+          - After giving results, offer to go deeper: "Would you like the quality index?" or "Should I check the health risk?"
 
           MISSION COMPLETION:
           When the user's question is fully answered, call the "complete_mission" tool.
@@ -653,7 +698,7 @@ When the user has successfully achieved the mission objective:
             "📝 [App] Setting system instructions for",
             language,
             "Mode:",
-            mode
+            mode,
           );
           this.client.setSystemInstructions(systemInstruction);
 
@@ -680,7 +725,7 @@ When the user has successfully achieved the mission objective:
             // Let's proceed and let server reject if needed, or stop.
             // For now, let's stop to be safe.
             isSpeaking = false;
-            micBtn.classList.remove('active');
+            micBtn.classList.remove("active");
             micBtn.innerHTML = `
                 <span style="font-size: 1.3rem; font-weight: 800; margin-bottom: 2px; letter-spacing: 0.02em;">Start Mission</span>
                 <span style="font-size: 0.85rem; opacity: 0.9; font-style: italic;">You start the conversation!</span>
@@ -701,7 +746,7 @@ When the user has successfully achieved the mission objective:
           if (this.audioStreamer.audioContext && this.audioStreamer.source) {
             userViz.connect(
               this.audioStreamer.audioContext,
-              this.audioStreamer.source
+              this.audioStreamer.source,
             );
           }
 
@@ -713,7 +758,7 @@ When the user has successfully achieved the mission objective:
           if (this.audioPlayer.audioContext && this.audioPlayer.gainNode) {
             modelViz.connect(
               this.audioPlayer.audioContext,
-              this.audioPlayer.gainNode
+              this.audioPlayer.gainNode,
             );
           }
 
@@ -737,7 +782,7 @@ When the user has successfully achieved the mission objective:
           console.log("Error status:", err.status); // Debug status
 
           isSpeaking = false;
-          micBtn.classList.remove('active');
+          micBtn.classList.remove("active");
           // Reset button content to "Start Mission"
           micBtn.innerHTML = `
               <span style="font-size: 1.3rem; font-weight: 800; margin-bottom: 2px; letter-spacing: 0.02em;">Start Mission</span>
@@ -767,14 +812,17 @@ When the user has successfully achieved the mission objective:
 
         // 1. Find built-in camera
         const devices = await navigator.mediaDevices.enumerateDevices();
-        const builtInCam = devices.find(d =>
-          d.kind === "videoinput" &&
-          (d.label.toLowerCase().includes("facetime") ||
-            d.label.toLowerCase().includes("built-in") ||
-            d.label.toLowerCase().includes("isight"))
+        const builtInCam = devices.find(
+          (d) =>
+            d.kind === "videoinput" &&
+            (d.label.toLowerCase().includes("facetime") ||
+              d.label.toLowerCase().includes("built-in") ||
+              d.label.toLowerCase().includes("isight")),
         );
 
-        let constraints = { video: { width: { ideal: 1280 }, height: { ideal: 960 } } };
+        let constraints = {
+          video: { width: { ideal: 1280 }, height: { ideal: 960 } },
+        };
         if (builtInCam) {
           console.log("📸 Using built-in camera:", builtInCam.label);
           constraints.video.deviceId = { exact: builtInCam.deviceId };
@@ -801,7 +849,7 @@ When the user has successfully achieved the mission objective:
         cameraBtn.style.background = "rgba(244,67,54,0.1)";
 
         // 4. Wait for user to click again to capture (or auto-capture after 3s)
-        await new Promise(resolve => {
+        await new Promise((resolve) => {
           const snapNow = () => {
             cameraBtn.removeEventListener("click", snapNow);
             clearTimeout(autoSnap);
@@ -818,13 +866,17 @@ When the user has successfully achieved the mission objective:
         canvas.getContext("2d").drawImage(preview, 0, 0);
 
         // 6. Cleanup: stop camera + remove preview
-        stream.getTracks().forEach(t => t.stop());
+        stream.getTracks().forEach((t) => t.stop());
         preview.remove();
 
         // 7. Send image
         const base64Data = canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
         this.client.sendImageMessage(base64Data, "image/jpeg");
-        console.log("📸 [LARS] Image sent! Size:", Math.round(base64Data.length / 1024), "KB");
+        console.log(
+          "📸 [LARS] Image sent! Size:",
+          Math.round(base64Data.length / 1024),
+          "KB",
+        );
 
         // 8. Visual feedback
         cameraBtn.innerHTML = "✅ Photo Sent — Now ask about it!";
@@ -835,20 +887,20 @@ When the user has successfully achieved the mission objective:
           cameraBtn.style.borderColor = "rgba(0,0,0,0.15)";
           cameraBtn.style.background = "rgba(0,0,0,0.06)";
         }, 3000);
-
       } catch (err) {
         console.error("📸 [LARS] Camera error:", err);
         alert("Camera error: " + err.message);
       }
     });
-
   }
 
   async getRecaptchaToken() {
     return new Promise((resolve) => {
       // Graceful fallback for Simple Mode
       if (typeof grecaptcha === "undefined") {
-        console.warn("⚠️ ReCAPTCHA not loaded (Simple Mode). Proceeding without token.");
+        console.warn(
+          "⚠️ ReCAPTCHA not loaded (Simple Mode). Proceeding without token.",
+        );
         resolve(null);
         return;
       }
@@ -858,11 +910,14 @@ When the user has successfully achieved the mission objective:
           try {
             const t = await grecaptcha.enterprise.execute(
               "6LeSYx8sAAAAAGdRAp8VQ2K9I-KYGWBykzayvQ8n",
-              { action: "LOGIN" }
+              { action: "LOGIN" },
             );
             resolve(t);
           } catch (e) {
-            console.warn("⚠️ ReCAPTCHA execution failed (Simple Mode fallback):", e);
+            console.warn(
+              "⚠️ ReCAPTCHA execution failed (Simple Mode fallback):",
+              e,
+            );
             resolve(null);
           }
         });

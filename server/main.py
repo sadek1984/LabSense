@@ -161,12 +161,29 @@ async def serve_spa(full_path: str):
 @app.post("/api/lars/query")
 async def lars_query(request: Request):
     data = await request.json()
-    question = data.get("question", "")
+    question = data.get("question", "") or data.get("query", "")
     
-    from server.lars_service import query_lars
-    answer = query_lars(question)
-    
-    return {"answer": answer}
+    try:
+        from server.lars_service import get_lars_engine
+        engine = get_lars_engine()
+        
+        if hasattr(engine, "process_query"):
+            result = engine.process_query(question)
+        elif hasattr(engine, "ask"):
+            result = engine.ask(question)
+        else:
+            return {"answer": "LARS engine has no query method available."}
+        
+        # Handle tuple results (text, dataframe)
+        if isinstance(result, tuple):
+            answer_text = str(result[0])
+        else:
+            answer_text = str(result)
+        
+        return {"answer": answer_text}
+    except Exception as e:
+        return {"answer": f"Error querying LARS: {str(e)}"}
+
 @app.post("/api/auth")
 @simpletrack("session_start")
 @limiter.limit(GLOBAL_RATE_LIMIT, key_func=get_global_key)
