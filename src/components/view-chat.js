@@ -688,9 +688,9 @@ When the user has successfully achieved the mission objective:
           - After giving results, offer to go deeper: "Would you like the quality index?" or "Should I check the health risk?"
 
           MISSION COMPLETION:
-          When the user's question is fully answered, call the "complete_mission" tool.
-          Score: 3 always (task-based, not language-based).
-          Feedback: 3 insights about what was found in the data.
+          ONLY call the "complete_mission" tool if the user explicitly says they are done or asks to end the session (e.g., "that's all", "I'm done", "complete mission", "انتهيت").
+          Do NOT auto-complete after every answer.
+          When called, score: 3 always, provide 3 insights about what was found.
           `;
           }
 
