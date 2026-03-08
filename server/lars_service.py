@@ -34,22 +34,22 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# ---------------------------------------------------------------------------
-# IMPORTANT: Adjust this path to wherever your LARS core lives
-# ---------------------------------------------------------------------------
-LARS_PROJECT_PATH = os.environ.get(
-    "LARS_PROJECT_PATH",
-    "/Users/a12/Buraidah_lars/src/LARS"
-)
-sys.path.insert(0, LARS_PROJECT_PATH)
+# 1. Add LARS source directory to Python path
+# ----------------------------------------------------------------------
+LARS_SRC = os.environ.get("LARS_PROJECT_PATH", "/Users/a12/Buraidah_lars/src/LARS")
+if LARS_SRC not in sys.path:
+    sys.path.insert(0, LARS_SRC)
 
-# Import YOUR existing LARS core — this already has ALL the intelligence
+# ----------------------------------------------------------------------
+# 2. Import CoreQueryEngine (now should be found)
+# ----------------------------------------------------------------------
 try:
-    from core_query_engine import CoreQueryEngine
+    from modules.core_query_engine import CoreQueryEngine
     LARS_AVAILABLE = True
 except ImportError as e:
-    logging.warning(f"Could not import CoreQueryEngine: {e}")
+    logger.error(f"Failed to import CoreQueryEngine: {e}")
     LARS_AVAILABLE = False
+    CoreQueryEngine = None
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -82,26 +82,25 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # Singleton: Initialize LARS engine once
 # ---------------------------------------------------------------------------
-_lars_engine = None
+_engine = None
 
 def get_lars_engine():
-    """
-    Lazy-initialize the CoreQueryEngine singleton.
-    This connects to DuckDB and loads all LARS capabilities ONCE.
-    """
-    global _lars_engine
-
-    if _lars_engine is None:
+    """Get or create the CoreQueryEngine instance."""
+    global _engine
+    if _engine is None:
         if not LARS_AVAILABLE:
-            raise HTTPException(
-                status_code=503,
-                detail="LARS CoreQueryEngine not available. Check LARS_PROJECT_PATH.",
-            )
-        logger.info(f"Initializing LARS CoreQueryEngine with DB: {DUCKDB_PATH}")
-        _lars_engine = CoreQueryEngine(db_path=DUCKDB_PATH)
-        logger.info("LARS CoreQueryEngine initialized successfully")
+            raise Exception("LARS CoreQueryEngine not available. Check LARS_PROJECT_PATH and imports.")
 
-    return _lars_engine
+        # Use environment variables or fallback defaults
+        db_path = os.environ.get("LARS_DB_PATH")
+        if not db_path:
+            # Fallback to default relative path inside LARS project
+            db_path = str(Path(LARS_SRC) / "data" / "lars_data.duckdb")
+
+        logger.info(f"Initializing CoreQueryEngine with db_path={db_path}")
+        _engine = CoreQueryEngine(db_path=db_path, enable_llm_fallback=False)  # Set True if you want LLM fallback
+
+    return _engine
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +155,9 @@ async def query_lars(request: QueryRequest):
         # OPTION A: If your core_query_engine has a single entry point
         # (most likely based on your codebase)
         # ---------------------------------------------------------------
-        if hasattr(engine, "process_query"):
+        if hasattr(engine, "process"):
+            result = engine.process(request.query)
+        elif hasattr(engine, "process_query"):
             result = engine.process_query(request.query)
 
         # ---------------------------------------------------------------
