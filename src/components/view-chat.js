@@ -27,6 +27,8 @@ class ViewChat extends HTMLElement {
   constructor() {
     super();
     this._mission = null;
+    this.currentQuery = null;  // Track the current/last query
+    this.lastItems = [];       // Track items mentioned in last query
   }
 
   set mission(value) {
@@ -463,9 +465,68 @@ class ViewChat extends HTMLElement {
       },
       ["question"],
     );
+    // In view-chat.js, update the larsQueryTool function
     larsQueryTool.functionToCall = (args) => {
       console.log("🔬 [LARS] Query:", args.question);
-      const toolCallId = args._toolCallId;
+      const toolCallId = args._toolCallId || "lars-call";
+
+      // Check if this is a correction/modification
+      const question = args.question.toLowerCase();
+      const isCorrection = question.includes('sorry') ||
+        question.includes('please add') ||
+        question.includes('include') ||
+        question.includes('also') ||
+        question.includes('اضف') ||
+        question.includes('أيضا');
+
+      // If it's a correction and we have previous context
+      if (isCorrection && this.currentQuery && this.lastItems.length > 0) {
+        console.log("🔄 Detected correction, modifying query...");
+
+        // Extract new items to add
+        const newItems = [];
+        const commodities = [
+          'potato', 'cucumber', 'eggplant', 'tomato', 'pepper',
+          'carrot', 'onion', 'garlic', 'lettuce', 'spinach',
+          'بطاطس', 'خيار', 'باذنجان', 'طماطم', 'فلفل'
+        ];
+
+        commodities.forEach(item => {
+          if (question.includes(item) && !this.lastItems.includes(item)) {
+            newItems.push(item);
+          }
+        });
+
+        if (newItems.length > 0) {
+          // Combine previous items with new ones
+          const allItems = [...this.lastItems, ...newItems];
+
+          // Create a modified query
+          let modifiedQuestion;
+          if (allItems.length === 2) {
+            modifiedQuestion = `${allItems[0]} and ${allItems[1]}`;
+          } else {
+            const lastItem = allItems.pop();
+            modifiedQuestion = `${allItems.join(', ')}, and ${lastItem}`;
+          }
+
+          // Add back the original intent
+          if (this.currentQuery.includes('violation')) {
+            modifiedQuestion = `violations for ${modifiedQuestion}`;
+          } else if (this.currentQuery.includes('risk')) {
+            modifiedQuestion = `risk assessment for ${modifiedQuestion}`;
+          } else if (this.currentQuery.includes('count')) {
+            modifiedQuestion = `count of ${modifiedQuestion} samples`;
+          } else {
+            modifiedQuestion = `${modifiedQuestion} samples`;
+          }
+
+          console.log("🔄 Modified query:", modifiedQuestion);
+
+          // Use the modified query instead
+          args.question = modifiedQuestion;
+        }
+      }
 
       fetch("/api/lars/query", {
         method: "POST",
@@ -477,13 +538,10 @@ class ViewChat extends HTMLElement {
           const answer = data.answer || data.error || "No results found.";
           console.log("🔬 [LARS] Result:", answer);
 
-          // Send as a structured response
           geminiClient.sendToolResponse(
             toolCallId,
             "search_pesticide_data",
-            {
-              result: answer  // Gemini expects the result in this format
-            }
+            { result: answer }
           );
         })
         .catch(err => {
@@ -491,9 +549,7 @@ class ViewChat extends HTMLElement {
           geminiClient.sendToolResponse(
             toolCallId,
             "search_pesticide_data",
-            {
-              error: "Database query failed: " + err.message
-            }
+            { error: "Database query failed: " + err.message }
           );
         });
     };
@@ -523,7 +579,28 @@ class ViewChat extends HTMLElement {
         console.log("🛠️ [Gemini] Tool Call received:", response.data);
         if (response.data.functionCalls) {
           response.data.functionCalls.forEach((fc) => {
-            // Pass the tool call ID so we can send the response back
+            if (fc.name === "search_pesticide_data") {
+              // Store the current query for context
+              this.currentQuery = fc.args.question;
+
+              // Extract items mentioned (simple parsing)
+              const question = fc.args.question.toLowerCase();
+              this.lastItems = [];
+
+              // Common commodities to detect
+              const commodities = [
+                'potato', 'cucumber', 'eggplant', 'tomato', 'pepper',
+                'carrot', 'onion', 'garlic', 'lettuce', 'spinach',
+                'بطاطس', 'خيار', 'باذنجان', 'طماطم', 'فلفل'
+              ];
+
+              commodities.forEach(item => {
+                if (question.includes(item)) {
+                  this.lastItems.push(item);
+                }
+              });
+            }
+
             const argsWithId = { ...fc.args, _toolCallId: fc.id };
             this.client.callFunction(fc.name, argsWithId);
           });
@@ -691,6 +768,32 @@ When the user has successfully achieved the mission objective:
           ONLY call the "complete_mission" tool if the user explicitly says they are done or asks to end the session (e.g., "that's all", "I'm done", "complete mission", "انتهيت").
           Do NOT auto-complete after every answer.
           When called, score: 3 always, provide 3 insights about what was found.
+          
+          === HANDLING CORRECTIONS ===
+          If the user says "sorry, please add X" or "sorry, include Y" or similar:
+          1. ACKNOWLEDGE the correction: "Adding [X] to your query..."
+          2. UPDATE the query to include the new item
+          3. CALL search_pesticide_data with the MODIFIED query that includes ALL items
+          
+          Example conversation:
+          User: "what is the total number of violations for potato and cucumber"
+          LARS: [calls tool with "violations for potato and cucumber"]
+          User: "sorry, please add eggplant"
+          LARS: "Adding eggplant to your search. Let me check violations for potato, cucumber, and eggplant."
+          LARS: [calls tool with "violations for potato, cucumber, and eggplant"]
+
+          This allows the user to build complex queries incrementally.
+          
+          === HANDLING INTERRUPTIONS ===
+          If the user interrupts with a new question before you finish answering:
+          1. STOP your current response
+          2. ACKNOWLEDGE: "Let me check that instead..."
+          3. FOCUS on the new question immediately
+          
+          Example:
+          User: "what about tomatoes?" (interrupts while you're answering about potato)
+          LARS: "Let me check tomatoes instead..."
+          LARS: [calls tool with "violations for tomato"]
           `;
           }
 
