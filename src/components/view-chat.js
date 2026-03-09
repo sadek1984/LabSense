@@ -27,8 +27,18 @@ class ViewChat extends HTMLElement {
   constructor() {
     super();
     this._mission = null;
-    this.currentQuery = null;  // Track the current/last query
-    this.lastItems = [];       // Track items mentioned in last query
+    this.currentQuery = null;
+    this.lastItems = [];
+
+    // ─── Interruption & stale-response tracking ─────────────────────────
+    // Each tool call cycle gets a unique generation ID. When the user
+    // interrupts mid-response, we bump the generation so that any
+    // in-flight fetch() responses from a previous cycle are discarded
+    // instead of being sent back to Gemini (which would cause Gemini
+    // to speak the OLD answer over the user's correction).
+    this._toolGeneration = 0;
+    this._pendingToolCalls = new Set(); // track in-flight tool call IDs
+    this._interrupted = false;          // true between INTERRUPTED and next TURN_COMPLETE
   }
 
   set mission(value) {
@@ -58,37 +68,32 @@ class ViewChat extends HTMLElement {
   }
 
   render() {
-    if (!this._mission) return; // Wait for mission prop
+    if (!this._mission) return;
 
     this.innerHTML = `
-
- <button id="back-to-missions" style="
-            position: absolute;
-            top: var(--spacing-md);
-            left: var(--spacing-md);
-            background: transparent;
-            float: left;
-            border: none;
-            cursor: pointer;
-            padding: 8px;
-            border-radius: 50%;
-            display: flex; align-items: center; justify-content: center;
-            opacity: 0.7;
-            transition: opacity 0.2s;
-            z-index: 10;
-        " onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
-        </button>
+      <button id="back-to-missions" style="
+          position: absolute;
+          top: var(--spacing-md);
+          left: var(--spacing-md);
+          background: transparent;
+          float: left;
+          border: none;
+          cursor: pointer;
+          padding: 8px;
+          border-radius: 50%;
+          display: flex; align-items: center; justify-content: center;
+          opacity: 0.7;
+          transition: opacity 0.2s;
+          z-index: 10;
+      " onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+      </button>
 
       <div class="container" style="justify-content: space-between; min-height: 100vh; position: relative; padding-bottom: var(--spacing-xl);">
-        
-       
 
         <div style="margin-top: var(--spacing-xl); text-align: center;">
-          <h2 style="font-size: 1.5rem; margin-bottom: 2px;">${this._mission.target_role || "Target Person"
-      }</h2>
+          <h2 style="font-size: 1.5rem; margin-bottom: 2px;">${this._mission.target_role || "Target Person"}</h2>
           
-          <!-- Language Visibility Pill -->
           <div style="
             font-size: 0.85rem; 
             font-weight: 700; 
@@ -118,10 +123,8 @@ class ViewChat extends HTMLElement {
             margin-top: var(--spacing-md);
             max-width: 800px;
           ">
-            <p style="font-size: 1.2rem; font-weight: bold; color: var(--color-accent-secondary); margin: 0;">${this._mission.title
-      }</p>
-            <p style="font-size: 1rem; opacity: 0.9; margin-top: 4px;">${this._mission.desc
-      }</p>
+            <p style="font-size: 1.2rem; font-weight: bold; color: var(--color-accent-secondary); margin: 0;">${this._mission.title}</p>
+            <p style="font-size: 1rem; opacity: 0.9; margin-top: 4px;">${this._mission.desc}</p>
           </div>
           ${this._mode === "immergo_teacher"
         ? `
@@ -145,15 +148,11 @@ class ViewChat extends HTMLElement {
       }
         </div>
 
-        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: ${this._mode === "immergo_teacher" ? "space-between" : "center"
-      }; width: 100%; gap: ${this._mode === "immergo_teacher" ? "10px" : "40px"
-      };">
-          <!-- Model Visualizer (Top) -->
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: ${this._mode === "immergo_teacher" ? "space-between" : "center"}; width: 100%; gap: ${this._mode === "immergo_teacher" ? "10px" : "40px"};">
           <div style="width: 100%; height: 120px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
              <audio-visualizer id="model-viz"></audio-visualizer>
           </div>
           
-          <!-- Transcript (Middle) -->
           ${this._mode === "immergo_teacher"
         ? `
             <div style="width: 100%; height: 250px; margin: 10px 0; position: relative;">
@@ -163,7 +162,6 @@ class ViewChat extends HTMLElement {
         : ""
       }
 
-          <!-- User Visualizer (Bottom) -->
            <div style="width: 100%; height: 120px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
              <audio-visualizer id="user-viz"></audio-visualizer>
           </div>
@@ -191,18 +189,15 @@ class ViewChat extends HTMLElement {
             overflow: hidden;
             font-family: var(--font-body);
           }
-
           .chat-cta-btn:hover {
             transform: translateY(-5px) scale(1.02);
             filter: brightness(1.1);
             box-shadow: 0 20px 40px -10px rgba(163, 177, 138, 0.4),
                         0 0 0 2px rgba(255,255,255,0.3) inset;
           }
-
           .chat-cta-btn:active {
             transform: translateY(-2px) scale(0.98);
           }
-
           .chat-cta-btn::after {
             content: '';
             position: absolute;
@@ -211,11 +206,9 @@ class ViewChat extends HTMLElement {
             transform: translateX(-150%) skewX(-15deg);
             transition: transform 0.6s;
           }
-
           .chat-cta-btn:hover::after {
             transform: translateX(150%) skewX(-15deg);
           }
-
           .chat-cta-btn.active {
             background: var(--color-danger) !important;
             flex-direction: row !important;
@@ -224,14 +217,12 @@ class ViewChat extends HTMLElement {
         </style>
 
         <div style="margin-bottom: var(--spacing-xxl); display: flex; flex-direction: column; gap: var(--spacing-lg); align-items: center;">
-           
            <button id="mic-btn" class="chat-cta-btn">
             <span style="font-size: 1.3rem; font-weight: 800; margin-bottom: 2px; letter-spacing: 0.02em;">Start Mission</span>
             <span style="font-size: 0.85rem; opacity: 0.9; font-style: italic;">You start the conversation!</span>
           </button>
 
-          <!-- Camera Snap Button (LARS Vision) -->
-           <button id="camera-btn" style="
+          <button id="camera-btn" style="
              display: none;
              background: rgba(0,0,0,0.06);
              color: var(--color-text-primary);
@@ -261,7 +252,6 @@ class ViewChat extends HTMLElement {
            "></p>
         </div>
 
-        <!-- Rate Limit Dialog -->
         <div id="rate-limit-dialog" class="hidden" style="
             position: fixed; inset: 0; 
             background: rgba(0,0,0,0.8); 
@@ -291,7 +281,7 @@ class ViewChat extends HTMLElement {
                         font-size: 1.1rem;
                         white-space: nowrap;
                         border: 2px dashed #1a73e8;
-                     " onmouseover="this.style.transform='translateY(-3px)'; this.style.boxShadow='0 8px 25px rgba(26, 115, 232, 0.2)'; this.style.background='rgba(26, 115, 232, 0.1)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(26, 115, 232, 0.1)'; this.style.background='rgba(26, 115, 232, 0.05)';" >
+                     " onmouseover="this.style.transform='translateY(-3px)'; this.style.boxShadow='0 8px 25px rgba(26, 115, 232, 0.2)'; this.style.background='rgba(26, 115, 232, 0.1)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(26, 115, 232, 0.1)'; this.style.background='rgba(26, 115, 232, 0.05)';">
                         <img src="https://www.gstatic.com/images/branding/product/1x/google_cloud_48dp.png" width="24" height="24" alt="Cloud Run Logo" />
                         Deploy to Cloud Run
                      </a>
@@ -319,38 +309,7 @@ class ViewChat extends HTMLElement {
       rateLimitDialog.style.display = "none";
     });
 
-    // Helper to perform navigation
     const doEndSession = () => {
-      // Cleanup Gemini session
-      if (this.audioStreamer) this.audioStreamer.stop();
-      if (this.client) this.client.disconnect();
-      if (this.audioPlayer) this.audioPlayer.interrupt(); // Stop playback
-
-      // Disconnect visualizers
-      const userViz = this.querySelector("#user-viz");
-      const modelViz = this.querySelector("#model-viz");
-      if (userViz && userViz.disconnect) userViz.disconnect();
-      if (modelViz && modelViz.disconnect) modelViz.disconnect();
-
-      console.log("👋 [App] Session ended by user");
-
-      // Incomplete session
-      const result = {
-        incomplete: true,
-      };
-
-      this.dispatchEvent(
-        new CustomEvent("navigate", {
-          bubbles: true,
-          detail: { view: "summary", result: result },
-        }),
-      );
-    };
-
-    // Back Button
-    const backBtn = this.querySelector("#back-to-missions");
-    backBtn.addEventListener("click", () => {
-      // Stop session if active
       if (this.audioStreamer) this.audioStreamer.stop();
       if (this.client) this.client.disconnect();
       if (this.audioPlayer) this.audioPlayer.interrupt();
@@ -360,7 +319,27 @@ class ViewChat extends HTMLElement {
       if (userViz && userViz.disconnect) userViz.disconnect();
       if (modelViz && modelViz.disconnect) modelViz.disconnect();
 
-      // Navigate back to mission selector
+      console.log("👋 [App] Session ended by user");
+
+      this.dispatchEvent(
+        new CustomEvent("navigate", {
+          bubbles: true,
+          detail: { view: "summary", result: { incomplete: true } },
+        }),
+      );
+    };
+
+    const backBtn = this.querySelector("#back-to-missions");
+    backBtn.addEventListener("click", () => {
+      if (this.audioStreamer) this.audioStreamer.stop();
+      if (this.client) this.client.disconnect();
+      if (this.audioPlayer) this.audioPlayer.interrupt();
+
+      const userViz = this.querySelector("#user-viz");
+      const modelViz = this.querySelector("#model-viz");
+      if (userViz && userViz.disconnect) userViz.disconnect();
+      if (modelViz && modelViz.disconnect) modelViz.disconnect();
+
       this.dispatchEvent(
         new CustomEvent("navigate", {
           bubbles: true,
@@ -369,7 +348,6 @@ class ViewChat extends HTMLElement {
       );
     });
 
-    // Animate visualizer on click
     const userViz = this.querySelector("#user-viz");
     const modelViz = this.querySelector("#model-viz");
     const micBtn = this.querySelector("#mic-btn");
@@ -381,7 +359,7 @@ class ViewChat extends HTMLElement {
     this.audioStreamer = new AudioStreamer(this.client);
     this.audioPlayer = new AudioPlayer();
 
-    // Define Mission Complete Tool
+    // ─── Mission Complete Tool ───────────────────────────────────────────────
     const completeMissionTool = new FunctionCallDefinition(
       "complete_mission",
       "Call this tool when the user has successfully completed the mission objective. Provide a score and feedback.",
@@ -396,8 +374,7 @@ class ViewChat extends HTMLElement {
           feedback_pointers: {
             type: "ARRAY",
             items: { type: "STRING" },
-            description:
-              "List of 3 constructive feedback points or compliments in English.",
+            description: "List of 3 constructive feedback points or compliments in English.",
           },
         },
         required: ["score", "feedback_pointers"],
@@ -408,48 +385,22 @@ class ViewChat extends HTMLElement {
     completeMissionTool.functionToCall = (args) => {
       console.log("🏆 [App] Mission Complete Tool Triggered!", args);
 
-      // Play winner sound immediately
       const winnerSound = new Audio("/winner-bell.mp3");
       winnerSound.volume = 0.6;
-      winnerSound
-        .play()
-        .catch((e) => console.error("Failed to play winner sound:", e));
+      winnerSound.play().catch((e) => console.error("Failed to play winner sound:", e));
 
-      // Map score to level
-      const levels = { 1: "Tiro", 2: "Proficiens", 3: "Peritus" };
-      const level = levels[args.score] || "Proficiens";
-
-      console.log(
-        "⏳ [App] Waiting for final audio to play before ending session...",
-      );
-
-      // Delay cleanup to allow the agent's congratulatory message to be heard
-      setTimeout(() => {
-        // Cleanup
-        if (this.audioStreamer) this.audioStreamer.stop();
-        if (this.client) this.client.disconnect();
-        if (this.audioPlayer) this.audioPlayer.interrupt();
-
-        // Navigate to summary
-        const result = {
-          score: args.score.toString(),
-          level: level,
-          notes: args.feedback_pointers,
-        };
-
-        this.dispatchEvent(
-          new CustomEvent("navigate", {
-            bubbles: true,
-            detail: { view: "summary", result: result },
-          }),
-        );
-      }, 2500); // 2.5 seconds delay
+      const transcriptEl = this.querySelector("live-transcript");
+      if (transcriptEl) {
+        transcriptEl.addSystemMessage("✅ Mission milestone reached - continue asking!");
+      }
     };
 
     this.client.addFunction(completeMissionTool);
+
     // Save reference for use inside tool callbacks
     const geminiClient = this.client;
-    // LARS Tool
+
+    // ─── LARS Tool ───────────────────────────────────────────────────────────
     const larsQueryTool = new FunctionCallDefinition(
       "search_pesticide_data",
       "Search the pesticide residue database. Call this for any question about samples, violations, or pesticides.",
@@ -465,65 +416,64 @@ class ViewChat extends HTMLElement {
       },
       ["question"],
     );
-    // In view-chat.js, update the larsQueryTool function
+
+    // ✅ FIX: functionToCall is now properly assigned as a method on the tool object
     larsQueryTool.functionToCall = (args) => {
-      console.log("🔬 [LARS] Query:", args.question);
-      const toolCallId = args._toolCallId || "lars-call";
+      // ✅ FIX: Guard against missing tool call ID — without this Gemini ignores the response
+      const toolCallId = args._toolCallId;
+      const callGeneration = args._generation;  // generation at time of tool call
+      if (!toolCallId) {
+        console.error("❌ [LARS] Missing _toolCallId! Tool response will be ignored by Gemini.");
+        return;
+      }
+
+      console.log("🔬 [LARS] Query:", args.question, "| CallID:", toolCallId, "| Gen:", callGeneration);
 
       // Check if this is a correction/modification
       const question = args.question.toLowerCase();
-      const isCorrection = question.includes('sorry') ||
-        question.includes('please add') ||
-        question.includes('include') ||
-        question.includes('also') ||
-        question.includes('اضف') ||
-        question.includes('أيضا');
+      const isCorrection =
+        question.includes("sorry") ||
+        question.includes("please add") ||
+        question.includes("include") ||
+        question.includes("also") ||
+        question.includes("اضف") ||
+        question.includes("أيضا");
 
-      // If it's a correction and we have previous context
+      // If it's a correction and we have previous context, build a merged query
       if (isCorrection && this.currentQuery && this.lastItems.length > 0) {
         console.log("🔄 Detected correction, modifying query...");
 
-        // Extract new items to add
-        const newItems = [];
         const commodities = [
-          'potato', 'cucumber', 'eggplant', 'tomato', 'pepper',
-          'carrot', 'onion', 'garlic', 'lettuce', 'spinach',
-          'بطاطس', 'خيار', 'باذنجان', 'طماطم', 'فلفل'
+          "potato", "cucumber", "eggplant", "tomato", "pepper",
+          "carrot", "onion", "garlic", "lettuce", "spinach",
+          "بطاطس", "خيار", "باذنجان", "طماطم", "فلفل",
         ];
 
-        commodities.forEach(item => {
-          if (question.includes(item) && !this.lastItems.includes(item)) {
-            newItems.push(item);
-          }
-        });
+        const newItems = commodities.filter(
+          (item) => question.includes(item) && !this.lastItems.includes(item)
+        );
 
         if (newItems.length > 0) {
-          // Combine previous items with new ones
           const allItems = [...this.lastItems, ...newItems];
-
-          // Create a modified query
           let modifiedQuestion;
           if (allItems.length === 2) {
             modifiedQuestion = `${allItems[0]} and ${allItems[1]}`;
           } else {
             const lastItem = allItems.pop();
-            modifiedQuestion = `${allItems.join(', ')}, and ${lastItem}`;
+            modifiedQuestion = `${allItems.join(", ")}, and ${lastItem}`;
           }
 
-          // Add back the original intent
-          if (this.currentQuery.includes('violation')) {
+          if (this.currentQuery.includes("violation")) {
             modifiedQuestion = `violations for ${modifiedQuestion}`;
-          } else if (this.currentQuery.includes('risk')) {
+          } else if (this.currentQuery.includes("risk")) {
             modifiedQuestion = `risk assessment for ${modifiedQuestion}`;
-          } else if (this.currentQuery.includes('count')) {
+          } else if (this.currentQuery.includes("count")) {
             modifiedQuestion = `count of ${modifiedQuestion} samples`;
           } else {
             modifiedQuestion = `${modifiedQuestion} samples`;
           }
 
           console.log("🔄 Modified query:", modifiedQuestion);
-
-          // Use the modified query instead
           args.question = modifiedQuestion;
         }
       }
@@ -531,32 +481,43 @@ class ViewChat extends HTMLElement {
       fetch("/api/lars/query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: args.question })
+        body: JSON.stringify({ question: args.question }),
       })
-        .then(res => res.json())
-        .then(data => {
+        .then((res) => res.json())
+        .then((data) => {
+          // ── Staleness check: discard if user interrupted since this call started ──
+          if (callGeneration !== undefined && callGeneration !== this._toolGeneration) {
+            console.log(`🗑️ [LARS] DISCARDING stale response (gen ${callGeneration} vs current ${this._toolGeneration})`);
+            this._pendingToolCalls.delete(toolCallId);
+            return;  // Don't send this back to Gemini — it belongs to an old turn
+          }
+
           const answer = data.answer || data.error || "No results found.";
           console.log("🔬 [LARS] Result:", answer);
-
-          geminiClient.sendToolResponse(
-            toolCallId,
-            "search_pesticide_data",
-            { result: answer }
-          );
+          this._pendingToolCalls.delete(toolCallId);
+          geminiClient.sendToolResponse(toolCallId, "search_pesticide_data", {
+            output: answer,
+          });
         })
-        .catch(err => {
+        .catch((err) => {
+          // Also check staleness on error path
+          if (callGeneration !== undefined && callGeneration !== this._toolGeneration) {
+            console.log(`🗑️ [LARS] DISCARDING stale error response (gen ${callGeneration})`);
+            this._pendingToolCalls.delete(toolCallId);
+            return;
+          }
+
           console.error("🔬 [LARS] Error:", err);
-          geminiClient.sendToolResponse(
-            toolCallId,
-            "search_pesticide_data",
-            { error: "Database query failed: " + err.message }
-          );
+          this._pendingToolCalls.delete(toolCallId);
+          geminiClient.sendToolResponse(toolCallId, "search_pesticide_data", {
+            output: "Database query failed: " + err.message,
+          });
         });
     };
 
     this.client.addFunction(larsQueryTool);
 
-    // Setup client callbacks for logging
+    // ─── Client Callbacks ────────────────────────────────────────────────────
     this.client.onConnectionStarted = () => {
       console.log("🚀 [Gemini] Connection started");
     };
@@ -567,63 +528,79 @@ class ViewChat extends HTMLElement {
 
     this.client.onReceiveResponse = (response) => {
       console.log("📥 [Gemini] Received response:", response.type);
+
       if (response.type === MultimodalLiveResponseType.AUDIO) {
+        statusEl.textContent = "Speaking...";
+        statusEl.style.color = "#4CAF50";
         this.audioPlayer.play(response.data);
+
+      } else if (response.type === MultimodalLiveResponseType.INTERRUPTED) {
+        console.log("🛑 [Gemini] Interruption signal received");
+        if (this.audioPlayer) this.audioPlayer.interrupt();
+
+        // ── Bump generation to invalidate all in-flight tool responses ──
+        this._toolGeneration++;
+        this._interrupted = true;
+        console.log(`🛑 [Interruption] Generation bumped to ${this._toolGeneration}, ${this._pendingToolCalls.size} pending call(s) will be discarded`);
+        this._pendingToolCalls.clear();
+
+        statusEl.textContent = "Interrupted - listening...";
+        statusEl.style.color = "#FFA500";
+
       } else if (response.type === MultimodalLiveResponseType.TURN_COMPLETE) {
+        statusEl.textContent = "Listening...";
+        statusEl.style.color = "#2196F3";
         console.log("✅ [Gemini] Turn complete");
+        this._interrupted = false;  // reset interruption state
         const transcriptEl = this.querySelector("live-transcript");
-        if (transcriptEl) {
-          transcriptEl.finalizeAll();
-        }
+        if (transcriptEl) transcriptEl.finalizeAll();
+
       } else if (response.type === MultimodalLiveResponseType.TOOL_CALL) {
         console.log("🛠️ [Gemini] Tool Call received:", response.data);
         if (response.data.functionCalls) {
-          response.data.functionCalls.forEach((fc) => {
-            if (fc.name === "search_pesticide_data") {
-              // Store the current query for context
-              this.currentQuery = fc.args.question;
+          // Capture current generation at the moment the tool call arrives.
+          // If an interruption bumps _toolGeneration before the fetch resolves,
+          // the response handler will see a mismatch and discard it.
+          const callGeneration = this._toolGeneration;
 
-              // Extract items mentioned (simple parsing)
-              const question = fc.args.question.toLowerCase();
+          response.data.functionCalls.forEach((fc) => {
+            // Track context for LARS correction handling
+            if (fc.name === "search_pesticide_data") {
+              this.currentQuery = fc.args.question;
               this.lastItems = [];
 
-              // Common commodities to detect
               const commodities = [
-                'potato', 'cucumber', 'eggplant', 'tomato', 'pepper',
-                'carrot', 'onion', 'garlic', 'lettuce', 'spinach',
-                'بطاطس', 'خيار', 'باذنجان', 'طماطم', 'فلفل'
+                "potato", "cucumber", "eggplant", "tomato", "pepper",
+                "carrot", "onion", "garlic", "lettuce", "spinach",
+                "بطاطس", "خيار", "باذنجان", "طماطم", "فلفل",
               ];
-
-              commodities.forEach(item => {
-                if (question.includes(item)) {
-                  this.lastItems.push(item);
-                }
+              const q = fc.args.question.toLowerCase();
+              commodities.forEach((item) => {
+                if (q.includes(item)) this.lastItems.push(item);
               });
             }
 
-            const argsWithId = { ...fc.args, _toolCallId: fc.id };
+            // Tag the call with generation so the async handler can check staleness
+            this._pendingToolCalls.add(fc.id);
+            const argsWithId = {
+              ...fc.args,
+              _toolCallId: fc.id,
+              _generation: callGeneration,
+            };
             this.client.callFunction(fc.name, argsWithId);
           });
         }
-      } else if (
-        response.type === MultimodalLiveResponseType.INPUT_TRANSCRIPTION
-      ) {
+
+      } else if (response.type === MultimodalLiveResponseType.INPUT_TRANSCRIPTION) {
         const transcriptEl = this.querySelector("live-transcript");
         if (transcriptEl) {
-          transcriptEl.addInputTranscript(
-            response.data.text,
-            response.data.finished,
-          );
+          transcriptEl.addInputTranscript(response.data.text, response.data.finished);
         }
-      } else if (
-        response.type === MultimodalLiveResponseType.OUTPUT_TRANSCRIPTION
-      ) {
+
+      } else if (response.type === MultimodalLiveResponseType.OUTPUT_TRANSCRIPTION) {
         const transcriptEl = this.querySelector("live-transcript");
         if (transcriptEl) {
-          transcriptEl.addOutputTranscript(
-            response.data.text,
-            response.data.finished,
-          );
+          transcriptEl.addOutputTranscript(response.data.text, response.data.finished);
         }
       }
     };
@@ -636,46 +613,38 @@ class ViewChat extends HTMLElement {
       console.log("🔒 [Gemini] Connection closed");
     };
 
+    // ─── Mic Button ──────────────────────────────────────────────────────────
     micBtn.addEventListener("click", async () => {
       isSpeaking = !isSpeaking;
 
       if (isSpeaking) {
         micBtn.classList.add("active");
-        // Change to Stop/Listening state
         micBtn.innerHTML = `
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>
             <span style="font-weight: 800; font-size: 1.1rem; letter-spacing: 0.05em; text-transform: uppercase;">End Mission</span>
         `;
       } else {
-        // Was active, so stopping now
         micBtn.classList.remove("active");
         doEndSession();
-        return; // Stop here, don't execute start logic
+        return;
       }
 
       if (isSpeaking) {
         console.log("🎙️ [App] Microphone button clicked: Starting session...");
         statusEl.textContent = "Connecting...";
         statusEl.style.color = "var(--color-text-sub)";
-        // Viz active handled by connection now
 
         try {
-          // 0. Configure System Instructions
           const language = this._language || "French";
           const fromLanguage = this._fromLanguage || "English";
           const mode = this._mode || "immergo_immersive";
-          const missionTitle = this._mission
-            ? this._mission.title
-            : "General Conversation";
+          const missionTitle = this._mission ? this._mission.title : "General Conversation";
           const missionDesc = this._mission ? this._mission.desc : "";
-          const targetRole = this._mission
-            ? this._mission.target_role || "a local native speaker"
-            : "a conversational partner";
+          const targetRole = this._mission ? this._mission.target_role || "a local native speaker" : "a conversational partner";
 
           let systemInstruction = "";
 
           if (mode === "immergo_teacher") {
-            // Teacher Mode Prompt
             systemInstruction = `
 ROLEPLAY INSTRUCTION:
 You are acting as **${targetRole}**, a native speaker of ${language}.
@@ -701,7 +670,6 @@ When the user has successfully achieved the mission objective:
 4. Provide 3 specific takeaways (grammar tips or new words) in the feedback list in ${fromLanguage}.
 `;
           } else {
-            // LARS Mode (with Vision capability)
             systemInstruction = `
           You are LARS — Laboratory Analysis and Risk System.
           You are a bilingual AI assistant for food safety laboratories in Al-Qassim, Saudi Arabia.
@@ -749,8 +717,6 @@ When the user has successfully achieved the mission objective:
           WHEN YOU SEE A LAB REPORT OR DOCUMENT:
           1. Read what you can see (sample name, pesticides, results).
           2. Use that information to form a natural language query to the tool.
-             Example: if report shows "Cumin - Non-Compliant - chlorpyrifos 0.7":
-             Call tool with "risk assessment for cumin" or "chlorpyrifos in cumin samples"
           3. Compare what you read in the image with the database results.
 
           WHEN YOU SEE MULTIPLE FOOD ITEMS:
@@ -763,49 +729,39 @@ When the user has successfully achieved the mission objective:
           - Round numbers: "about 350 samples" not "347 samples"
           - Highlight the most important finding first.
           - After giving results, offer to go deeper: "Would you like the quality index?" or "Should I check the health risk?"
+          
+          === HANDLING CORRECTIONS & MODIFICATIONS ===
+          The user may interrupt you mid-sentence to correct or modify their query.
+          For example: "what are the violations for potato and cucumber" then while
+          you're answering they say "sorry, please add eggplant".
+          
+          When this happens:
+          1. STOP immediately (the system handles audio cutoff automatically).
+          2. Understand the correction in context of the PREVIOUS query.
+          3. Build a NEW COMPLETE query that merges the original items with the new ones.
+             Example: original was "violations for potato and cucumber" + correction "add eggplant"
+             → new query: "violations for potato, cucumber, and eggplant"
+          4. Call search_pesticide_data with the MERGED query.
+          5. Present the COMPLETE results — don't repeat the old partial answer.
 
-          MISSION COMPLETION:
-          ONLY call the "complete_mission" tool if the user explicitly says they are done or asks to end the session (e.g., "that's all", "I'm done", "complete mission", "انتهيت").
-          Do NOT auto-complete after every answer.
-          When called, score: 3 always, provide 3 insights about what was found.
-          
-          === HANDLING CORRECTIONS ===
-          If the user says "sorry, please add X" or "sorry, include Y" or similar:
-          1. ACKNOWLEDGE the correction: "Adding [X] to your query..."
-          2. UPDATE the query to include the new item
-          3. CALL search_pesticide_data with the MODIFIED query that includes ALL items
-          
-          Example conversation:
-          User: "what is the total number of violations for potato and cucumber"
-          LARS: [calls tool with "violations for potato and cucumber"]
-          User: "sorry, please add eggplant"
-          LARS: "Adding eggplant to your search. Let me check violations for potato, cucumber, and eggplant."
-          LARS: [calls tool with "violations for potato, cucumber, and eggplant"]
+          This also applies to:
+          - "actually, I meant tomato not potato" → replace the item
+          - "and also check the risk" → add a new analysis type to the same items
+          - "wait, include garlic too" → add to the item list
+          - Arabic equivalents: "اضف الباذنجان" / "أيضا الثوم"
 
-          This allows the user to build complex queries incrementally.
-          
-          === HANDLING INTERRUPTIONS ===
-          If the user interrupts with a new question before you finish answering:
-          1. STOP your current response
-          2. ACKNOWLEDGE: "Let me check that instead..."
-          3. FOCUS on the new question immediately
-          
-          Example:
-          User: "what about tomatoes?" (interrupts while you're answering about potato)
-          LARS: "Let me check tomatoes instead..."
-          LARS: [calls tool with "violations for tomato"]
+          === HANDLING INTERRUPTIONS (TOPIC CHANGE) ===
+          If the user interrupts with a COMPLETELY DIFFERENT question:
+          1. STOP your current response (automatic)
+          2. Do NOT reference or finish the previous answer
+          3. IMMEDIATELY address the new question
+          4. Call search_pesticide_data for the new topic if needed
           `;
           }
 
-          console.log(
-            "📝 [App] Setting system instructions for",
-            language,
-            "Mode:",
-            mode,
-          );
+          console.log("📝 [App] Setting system instructions for", language, "Mode:", mode);
           this.client.setSystemInstructions(systemInstruction);
 
-          // Configure Transcription based on Mode
           if (mode === "immergo_teacher") {
             this.client.setInputAudioTranscription(true);
             this.client.setOutputAudioTranscription(true);
@@ -814,19 +770,14 @@ When the user has successfully achieved the mission objective:
             this.client.setOutputAudioTranscription(false);
           }
 
-          // 1. Connect to WebSocket
           console.log("🔌 [App] Connecting to backend...");
 
-          // Execute Recaptcha
           let token = "";
           try {
             token = await this.getRecaptchaToken();
             console.log("Captcha solved:", token);
           } catch (err) {
             console.error("Recaptcha failed:", err);
-            // Start without token? Or fail? The server will reject it.
-            // Let's proceed and let server reject if needed, or stop.
-            // For now, let's stop to be safe.
             isSpeaking = false;
             micBtn.classList.remove("active");
             micBtn.innerHTML = `
@@ -841,52 +792,39 @@ When the user has successfully achieved the mission objective:
 
           await this.client.connect(token);
 
-          // 2. Start Audio Stream
           console.log("🎤 [App] Starting audio stream...");
           await this.audioStreamer.start();
 
-          // Connect User Visualizer
           if (this.audioStreamer.audioContext && this.audioStreamer.source) {
-            userViz.connect(
-              this.audioStreamer.audioContext,
-              this.audioStreamer.source,
-            );
+            userViz.connect(this.audioStreamer.audioContext, this.audioStreamer.source);
           }
 
-          // 3. Initialize Audio Player
           console.log("🔊 [App] Initializing audio player...");
           await this.audioPlayer.init();
 
-          // Connect Model Visualizer
           if (this.audioPlayer.audioContext && this.audioPlayer.gainNode) {
-            modelViz.connect(
-              this.audioPlayer.audioContext,
-              this.audioPlayer.gainNode,
-            );
+            modelViz.connect(this.audioPlayer.audioContext, this.audioPlayer.gainNode);
           }
 
           console.log("✨ [App] Session active!");
           statusEl.textContent = "Connected and ready to speak";
-          statusEl.style.color = "#4CAF50"; // Success green
+          statusEl.style.color = "#4CAF50";
 
-          // Show camera button for LARS mode (not language learning mode)
           if (mode !== "immergo_teacher") {
             const camBtn = this.querySelector("#camera-btn");
             if (camBtn) camBtn.style.display = "flex";
           }
-          // Play start sound
+
           const startSound = new Audio("/start-bell.mp3");
           startSound.volume = 0.6;
-          startSound
-            .play()
-            .catch((e) => console.error("Failed to play start sound:", e));
+          startSound.play().catch((e) => console.error("Failed to play start sound:", e));
+
         } catch (err) {
           console.error("❌ [App] Failed to start session:", err);
-          console.log("Error status:", err.status); // Debug status
+          console.log("Error status:", err.status);
 
           isSpeaking = false;
           micBtn.classList.remove("active");
-          // Reset button content to "Start Mission"
           micBtn.innerHTML = `
               <span style="font-size: 1.3rem; font-weight: 800; margin-bottom: 2px; letter-spacing: 0.02em;">Start Mission</span>
               <span style="font-size: 0.85rem; opacity: 0.9; font-style: italic;">You start the conversation!</span>
@@ -906,14 +844,13 @@ When the user has successfully achieved the mission objective:
       }
     });
 
-    // ===== CAMERA SNAP (LARS Vision) =====
+    // ─── Camera Snap (LARS Vision) ───────────────────────────────────────────
     const cameraBtn = this.querySelector("#camera-btn");
 
     cameraBtn.addEventListener("click", async () => {
       try {
         console.log("📸 [LARS] Camera snap requested");
 
-        // 1. Find built-in camera
         const devices = await navigator.mediaDevices.enumerateDevices();
         const builtInCam = devices.find(
           (d) =>
@@ -923,9 +860,7 @@ When the user has successfully achieved the mission objective:
               d.label.toLowerCase().includes("isight")),
         );
 
-        let constraints = {
-          video: { width: { ideal: 1280 }, height: { ideal: 960 } },
-        };
+        let constraints = { video: { width: { ideal: 1280 }, height: { ideal: 960 } } };
         if (builtInCam) {
           console.log("📸 Using built-in camera:", builtInCam.label);
           constraints.video.deviceId = { exact: builtInCam.deviceId };
@@ -933,7 +868,6 @@ When the user has successfully achieved the mission objective:
 
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
-        // 2. Show a temporary live preview so user can aim
         const preview = document.createElement("video");
         preview.srcObject = stream;
         preview.setAttribute("playsinline", "true");
@@ -946,12 +880,10 @@ When the user has successfully achieved the mission objective:
         document.body.appendChild(preview);
         await preview.play();
 
-        // 3. Update button to "Snap Now"
         cameraBtn.innerHTML = "🔴 Tap to Capture!";
         cameraBtn.style.borderColor = "#f44336";
         cameraBtn.style.background = "rgba(244,67,54,0.1)";
 
-        // 4. Wait for user to click again to capture (or auto-capture after 3s)
         await new Promise((resolve) => {
           const snapNow = () => {
             cameraBtn.removeEventListener("click", snapNow);
@@ -959,29 +891,21 @@ When the user has successfully achieved the mission objective:
             resolve();
           };
           cameraBtn.addEventListener("click", snapNow, { once: true });
-          const autoSnap = setTimeout(resolve, 3000); // auto-snap after 3s
+          const autoSnap = setTimeout(resolve, 3000);
         });
 
-        // 5. Capture frame
         const canvas = document.createElement("canvas");
         canvas.width = preview.videoWidth;
         canvas.height = preview.videoHeight;
         canvas.getContext("2d").drawImage(preview, 0, 0);
 
-        // 6. Cleanup: stop camera + remove preview
         stream.getTracks().forEach((t) => t.stop());
         preview.remove();
 
-        // 7. Send image
         const base64Data = canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
         this.client.sendImageMessage(base64Data, "image/jpeg");
-        console.log(
-          "📸 [LARS] Image sent! Size:",
-          Math.round(base64Data.length / 1024),
-          "KB",
-        );
+        console.log("📸 [LARS] Image sent! Size:", Math.round(base64Data.length / 1024), "KB");
 
-        // 8. Visual feedback
         cameraBtn.innerHTML = "✅ Photo Sent — Now ask about it!";
         cameraBtn.style.borderColor = "#4CAF50";
         cameraBtn.style.background = "rgba(76,175,80,0.1)";
@@ -990,6 +914,7 @@ When the user has successfully achieved the mission objective:
           cameraBtn.style.borderColor = "rgba(0,0,0,0.15)";
           cameraBtn.style.background = "rgba(0,0,0,0.06)";
         }, 3000);
+
       } catch (err) {
         console.error("📸 [LARS] Camera error:", err);
         alert("Camera error: " + err.message);
@@ -999,15 +924,11 @@ When the user has successfully achieved the mission objective:
 
   async getRecaptchaToken() {
     return new Promise((resolve) => {
-      // Graceful fallback for Simple Mode
       if (typeof grecaptcha === "undefined") {
-        console.warn(
-          "⚠️ ReCAPTCHA not loaded (Simple Mode). Proceeding without token.",
-        );
+        console.warn("⚠️ ReCAPTCHA not loaded (Simple Mode). Proceeding without token.");
         resolve(null);
         return;
       }
-
       try {
         grecaptcha.enterprise.ready(async () => {
           try {
@@ -1017,10 +938,7 @@ When the user has successfully achieved the mission objective:
             );
             resolve(t);
           } catch (e) {
-            console.warn(
-              "⚠️ ReCAPTCHA execution failed (Simple Mode fallback):",
-              e,
-            );
+            console.warn("⚠️ ReCAPTCHA execution failed (Simple Mode fallback):", e);
             resolve(null);
           }
         });
