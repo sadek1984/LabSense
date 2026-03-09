@@ -15,9 +15,9 @@
  */
 
 import { defineConfig } from 'vite';
-
 export default defineConfig({
     server: {
+        allowedHosts: ['.ngrok-free.app'],
         proxy: {
             '/api': {
                 target: 'http://localhost:8080',

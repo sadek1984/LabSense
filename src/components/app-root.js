@@ -241,6 +241,7 @@ class AppRoot extends HTMLElement {
             <span>⚠️ <b>Simple Mode Check:</b> Production security features (${missingText}) are not configured.</span>
             <a href="https://github.com/ZackAkil/immersive-language-learning-with-live-api#advanced-configuration" target="_blank" style="color: #533f03; text-decoration: underline; font-weight: bold; margin-left: 4px;">Learn more</a>
         `;
+        warning.style.display = 'none';
 
         this.appendChild(warning);
     }

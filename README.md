@@ -210,3 +210,7 @@ gemini-2.5-flash-native-audio-preview-12-2025
 
 ## run server
 DEV_MODE=true uvicorn server.main:app --host 0.0.0.0 --port 8080 --reload
+
+## run ngrok
+ngrok http 5173
+https://7781-2001-16a3-d75-2200-25b8-e089-9cea-661d.ngrok-free.app -> http://localhost:5173 
