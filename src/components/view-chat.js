@@ -901,20 +901,14 @@ When the user has successfully achieved the mission objective:
       try {
         console.log("📸 [LARS] Camera snap requested");
 
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const builtInCam = devices.find(
-          (d) =>
-            d.kind === "videoinput" &&
-            (d.label.toLowerCase().includes("facetime") ||
-              d.label.toLowerCase().includes("built-in") ||
-              d.label.toLowerCase().includes("isight")),
-        );
-
-        let constraints = { video: { width: { ideal: 1280 }, height: { ideal: 960 } } };
-        if (builtInCam) {
-          console.log("📸 Using built-in camera:", builtInCam.label);
-          constraints.video.deviceId = { exact: builtInCam.deviceId };
-        }
+        // Use back camera (environment) on mobile, fall back to any camera on desktop
+        let constraints = {
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 960 }
+          }
+        };
 
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
