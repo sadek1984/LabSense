@@ -39,6 +39,7 @@ class ViewChat extends HTMLElement {
     this._toolGeneration = 0;
     this._pendingToolCalls = new Set(); // track in-flight tool call IDs
     this._interrupted = false;          // true between INTERRUPTED and next TURN_COMPLETE
+    this._detectedLanguage = "en";      // track user's language: "en" or "ar"
   }
 
   set mission(value) {
@@ -495,8 +496,17 @@ class ViewChat extends HTMLElement {
           const answer = data.answer || data.error || "No results found.";
           console.log("🔬 [LARS] Result:", answer);
           this._pendingToolCalls.delete(toolCallId);
+
+          // ── Inject language directive into tool response ──
+          // This is the most reliable way to force Gemini to respond in the
+          // correct language, because it sees this instruction right before
+          // formulating its spoken answer.
+          const langDirective = this._detectedLanguage === "ar"
+            ? "\n\n[INSTRUCTION: The user spoke in ARABIC. You MUST respond ENTIRELY in Arabic. Translate all data above into Arabic before speaking. لا تتحدث بالإنجليزية.]"
+            : "\n\n[INSTRUCTION: The user spoke in ENGLISH. You MUST respond ENTIRELY in English. Do NOT use Arabic.]";
+
           geminiClient.sendToolResponse(toolCallId, "search_pesticide_data", {
-            output: answer,
+            output: answer + langDirective,
           });
         })
         .catch((err) => {
@@ -509,8 +519,13 @@ class ViewChat extends HTMLElement {
 
           console.error("🔬 [LARS] Error:", err);
           this._pendingToolCalls.delete(toolCallId);
+
+          const errLangDirective = this._detectedLanguage === "ar"
+            ? "\n\n[INSTRUCTION: أجب بالعربي فقط.]"
+            : "\n\n[INSTRUCTION: Respond in English only.]";
+
           geminiClient.sendToolResponse(toolCallId, "search_pesticide_data", {
-            output: "Database query failed: " + err.message,
+            output: "Database query failed: " + err.message + errLangDirective,
           });
         });
     };
@@ -569,6 +584,16 @@ class ViewChat extends HTMLElement {
               this.currentQuery = fc.args.question;
               this.lastItems = [];
 
+              // Detect language from the question as fallback
+              const arabicRe = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/;
+              if (arabicRe.test(fc.args.question)) {
+                this._detectedLanguage = "ar";
+              }
+              // Note: don't set to "en" here because Gemini may translate
+              // the Arabic user query to English for the tool call.
+              // We only trust Arabic detection from tool args, and rely
+              // on input transcription for English detection.
+
               const commodities = [
                 "potato", "cucumber", "eggplant", "tomato", "pepper",
                 "carrot", "onion", "garlic", "lettuce", "spinach",
@@ -595,6 +620,13 @@ class ViewChat extends HTMLElement {
         const transcriptEl = this.querySelector("live-transcript");
         if (transcriptEl) {
           transcriptEl.addInputTranscript(response.data.text, response.data.finished);
+        }
+        // ── Detect user language from transcription ──
+        if (response.data.text && response.data.text.trim()) {
+          const txt = response.data.text.trim();
+          const arabicRe = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/;
+          this._detectedLanguage = arabicRe.test(txt) ? "ar" : "en";
+          console.log(`🌐 [Lang] Detected user language: ${this._detectedLanguage} from: "${txt.slice(0, 40)}..."`);
         }
 
       } else if (response.type === MultimodalLiveResponseType.OUTPUT_TRANSCRIPTION) {
@@ -674,8 +706,21 @@ When the user has successfully achieved the mission objective:
           You are LARS — Laboratory Analysis and Risk System.
           You are a bilingual AI assistant for food safety laboratories in Al-Qassim, Saudi Arabia.
 
-          Respond in the same language the user speaks — Arabic or English.
-          تحدث بنفس لغة المستخدم — عربي أو إنجليزي.
+          === STRICT LANGUAGE RULE (HIGHEST PRIORITY) ===
+          You MUST detect which language the user spoke and respond ENTIRELY in that SAME language.
+          - If the user speaks in ENGLISH → respond ONLY in English. Every word must be English.
+          - If the user speaks in ARABIC → respond ONLY in Arabic. Every word must be Arabic.
+          - This applies to EVERYTHING you say: greetings, data results, follow-up questions, summaries.
+          - When you receive tool results (which may be in English), you MUST TRANSLATE them
+            into the user's language before speaking. Do NOT read English data to an Arabic speaker.
+          - Do NOT mix languages. Do NOT switch mid-sentence. Do NOT add Arabic to English or vice versa.
+          - Even numbers, commodity names, and pesticide names should be spoken in the user's language
+            when a natural translation exists (e.g. "بطاطس" not "potato" for Arabic speakers).
+            Technical pesticide names (like "chlorpyrifos") can stay in their original form.
+
+          يجب أن تكتشف لغة المستخدم وتجيب بنفس اللغة تماماً.
+          إذا تحدث بالعربي، أجب بالعربي فقط. إذا تحدث بالإنجليزي، أجب بالإنجليزي فقط.
+          لا تخلط بين اللغتين أبداً.
 
           Your mission: "${missionTitle}" — ${missionDesc}
 
@@ -684,6 +729,9 @@ When the user has successfully achieved the mission objective:
           Call search_pesticide_data IMMEDIATELY with a natural language question.
           Do NOT answer from your own knowledge. Do NOT say "I don't have data."
           The LARS database handles ALL analysis — just forward the question.
+          IMPORTANT: Always send the tool query in ENGLISH regardless of the user's language,
+          because the database works best with English queries. But ALWAYS present
+          the results back to the user in THEIR language.
 
           === HOW TO USE THE TOOL ===
           The search_pesticide_data tool accepts natural language questions. Examples:
@@ -701,7 +749,6 @@ When the user has successfully achieved the mission objective:
           You can ask about: sample counts, violations, compliance rates, risk assessment,
           quality index, health risk index, pesticide statistics, chemical groups,
           trend analysis, comparisons between commodities, and more.
-          Just phrase it naturally — LARS understands Arabic and English.
 
           === VISION CAPABILITY ===
           You can SEE images the user sends from their camera.
@@ -729,6 +776,7 @@ When the user has successfully achieved the mission objective:
           - Round numbers: "about 350 samples" not "347 samples"
           - Highlight the most important finding first.
           - After giving results, offer to go deeper: "Would you like the quality index?" or "Should I check the health risk?"
+          - REMINDER: Speak in the SAME language as the user's last message. Always.
           
           === HANDLING CORRECTIONS & MODIFICATIONS ===
           The user may interrupt you mid-sentence to correct or modify their query.
@@ -743,6 +791,7 @@ When the user has successfully achieved the mission objective:
              → new query: "violations for potato, cucumber, and eggplant"
           4. Call search_pesticide_data with the MERGED query.
           5. Present the COMPLETE results — don't repeat the old partial answer.
+          6. RESPOND in the same language the user used for the correction.
 
           This also applies to:
           - "actually, I meant tomato not potato" → replace the item
@@ -756,6 +805,7 @@ When the user has successfully achieved the mission objective:
           2. Do NOT reference or finish the previous answer
           3. IMMEDIATELY address the new question
           4. Call search_pesticide_data for the new topic if needed
+          5. Respond in whatever language the NEW question was asked in
           `;
           }
 
