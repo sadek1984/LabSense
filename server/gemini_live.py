@@ -154,22 +154,25 @@ class GeminiLive:
                                 image_bytes = b64.b64decode(parsed["_image"])
                                 mime_type = parsed.get("_mime", "image/jpeg")
                                 try:
+                                    # ✅ FIX: Use send_realtime_input with video= parameter.
+                                    # send_client_content with inline_data is NOT supported
+                                    # by native-audio Live API models and causes error 1008.
+                                    await session.send_realtime_input(
+                                        video=types.Blob(
+                                            data=image_bytes,
+                                            mime_type=mime_type
+                                        )
+                                    )
+                                    print(f"📸 Image sent to Gemini via realtime_input: {len(image_bytes)} bytes")
+
+                                    # Send a text prompt so Gemini knows to describe the image
                                     await session.send_client_content(
                                         turns=types.Content(
                                             role="user",
-                                            parts=[
-                                                types.Part(
-                                                    inline_data=types.Blob(
-                                                        data=image_bytes,
-                                                        mime_type=mime_type
-                                                    )
-                                                ),
-                                                types.Part(text="I just sent you a photo. Describe what you see.")
-                                            ]
+                                            parts=[types.Part(text="I just sent you a photo. Describe what you see.")]
                                         ),
                                         turn_complete=True
                                     )
-                                    print(f"📸 Image sent to Gemini: {len(image_bytes)} bytes")
                                 except Exception as img_err:
                                     print(f"❌ Image send FAILED: {type(img_err).__name__}: {img_err}")
                                 continue
