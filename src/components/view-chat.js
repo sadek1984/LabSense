@@ -93,60 +93,18 @@ class ViewChat extends HTMLElement {
       <div class="container" style="justify-content: space-between; min-height: 100vh; position: relative; padding-bottom: var(--spacing-xl);">
 
         <div style="margin-top: var(--spacing-xl); text-align: center;">
-          <h2 style="font-size: 1.5rem; margin-bottom: 2px;">${this._mission.target_role || "Target Person"}</h2>
+        <div style="margin-top: var(--spacing-xl); text-align: center;">
+          <h2 style="font-size: 1.8rem; margin-bottom: 2px; color: var(--color-accent-primary);">${this._mission.title}</h2>
           
           <div style="
-            font-size: 0.85rem; 
-            font-weight: 700; 
-            color: var(--color-text-sub);
-            margin-bottom: var(--spacing-md);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            background: rgba(0,0,0,0.04);
-            padding: 4px 12px;
-            border-radius: var(--radius-full);
-            width: fit-content;
-            margin-left: auto;
-            margin-right: auto;
-            border: 1px solid rgba(0,0,0,0.05);
-          ">
-            <span>${this._fromLanguage}</span>
-            <span style="opacity: 0.3; font-weight: normal;">➔</span>
-            <span style="color: var(--color-accent-primary);">${this._language}</span>
-          </div>
-
-          <div style="
             border-radius: var(--radius-lg);
-            padding: var(--spacing-md) var(--spacing-lg);
+            padding: var(--spacing-sm) var(--spacing-lg);
             display: inline-block;
             margin-top: var(--spacing-md);
             max-width: 800px;
           ">
-            <p style="font-size: 1.2rem; font-weight: bold; color: var(--color-accent-secondary); margin: 0;">${this._mission.title}</p>
-            <p style="font-size: 1rem; opacity: 0.9; margin-top: 4px;">${this._mission.desc}</p>
+            <p style="font-size: 1rem; opacity: 0.9; margin-top: 4px; color: var(--color-text-main);">${this._mission.description || ""}</p>
           </div>
-          ${this._mode === "immergo_teacher"
-        ? `
-          <div style="
-            margin-top: var(--spacing-lg); 
-            font-size: 0.9rem; 
-            background: var(--color-surface); 
-            color: var(--color-accent-primary); 
-            padding: 8px 16px; 
-            border-radius: var(--radius-full); 
-            display: inline-flex; 
-            align-items: center; 
-            gap: 6px;
-            border: 1px solid var(--color-accent-primary);
-            box-shadow: var(--shadow-sm);
-          ">
-            <span>You can ask for <strong>translations</strong> & <strong>explanations</strong> at any time.</span>
-          </div>
-          `
-        : ""
-      }
         </div>
 
         <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: ${this._mode === "immergo_teacher" ? "space-between" : "center"}; width: 100%; gap: ${this._mode === "immergo_teacher" ? "10px" : "40px"};">
@@ -671,7 +629,7 @@ class ViewChat extends HTMLElement {
           const fromLanguage = this._fromLanguage || "English";
           const mode = this._mode || "immergo_immersive";
           const missionTitle = this._mission ? this._mission.title : "General Conversation";
-          const missionDesc = this._mission ? this._mission.desc : "";
+          const missionDesc = this._mission ? this._mission.description : "";
           const targetRole = this._mission ? this._mission.target_role || "a local native speaker" : "a conversational partner";
 
           let systemInstruction = "";
