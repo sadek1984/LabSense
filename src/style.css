@@ -10,33 +10,33 @@
 }
 
 :root {
-  /* Colors - Mystic Archive (Dark Default) */
-    --color-bg: #0a0b10;
-    /* Deep Blue-Black */
-    --color-surface: rgba(22, 24, 34, 0.6);
+  /* Colors - LARS Clinical Lab Theme (Dark Default) */
+    --color-bg: #050d1a;
+    /* Deep Navy */
+    --color-surface: rgba(14, 25, 41, 0.7);
     /* Glassy Surface */
-    --color-surface-solid: #161822;
+    --color-surface-solid: #0e1929;
     /* Fallback */
-    --color-text-main: #eaddcf;
-    /* Warm Paper White */
-    --color-text-sub: #949ba4;
-    /* Cool Gray */
+    --color-text-main: #e2eaf4;
+    /* Cool White */
+    --color-text-sub: #8b9eb7;
+    /* Steel Gray */
   
     /* Accents */
-    --color-accent-primary: #a3b18a;
-    /* Golden Sage */
-    --color-accent-secondary: #d4a373;
-    /* Leather/Gold */
-    --color-accent-glow: rgba(163, 177, 138, 0.15);
+    --color-accent-primary: #00c2c7;
+    /* Cyan / Teal */
+    --color-accent-secondary: #4dabf5;
+    /* Mid Blue */
+    --color-accent-glow: rgba(0, 194, 199, 0.2);
   
     /* Functional */
     --color-danger: #e57373;
     --color-success: #81c784;
-    --texture-opacity: 0.03;
+    --texture-opacity: 0.05;
 
   /* Typography */
-  --font-heading: 'Libre Baskerville', serif;
-  --font-body: 'Nunito', sans-serif;
+  --font-heading: 'Inter', 'Nunito', sans-serif;
+  --font-body: 'Inter', 'Nunito', sans-serif;
 
   /* Spacing */
   --spacing-xs: 4px;
@@ -47,52 +47,49 @@
   --spacing-xxl: 64px;
 
   /* Border Radius */
-  --radius-sm: 8px;
-  --radius-md: 16px;
-    /* Slightly rounder */
-    --radius-lg: 24px;
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
   --radius-full: 9999px;
 
   /* Effects */
-    --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
-    --shadow-md: 0 10px 30px -5px rgba(0, 0, 0, 0.4);
+    --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 10px 30px -5px rgba(0, 0, 0, 0.5);
     --shadow-glow: 0 0 20px var(--color-accent-glow);
-    --glass-border: 1px solid rgba(255, 255, 255, 0.08);
-    --backdrop-blur: blur(12px);
+    --glass-border: 1px solid rgba(0, 194, 199, 0.15);
+    --backdrop-blur: blur(16px);
   }
   
-  /* Light Mode Override - Fresh Parchment */
+  /* Light Mode Override - Clinical White */
   .light-mode {
-    --color-bg: #f5f2eb;
-    /* Creamy Parchment */
-    --color-surface: rgba(255, 255, 255, 0.85);
-    /* More opaque */
+    --color-bg: #f5f7fa;
+    /* Light Lab White */
+    --color-surface: rgba(255, 255, 255, 0.9);
     --color-surface-solid: #ffffff;
-    --color-text-main: #2c2420;
-    /* Dark Ink */
-    --color-text-sub: #5e5048;
-    /* Sepia Gray */
+    --color-text-main: #1e293b;
+    /* Dark Slate */
+    --color-text-sub: #64748b;
+    /* Mid Slate */
   
-    --color-accent-primary: #5c6b48;
-    /* Deep Olive */
-    --color-accent-secondary: #000000;
-    /* Distinct Black for strong headers/actions */
-    /* Aged Wood */
-    --color-accent-glow: rgba(92, 107, 72, 0.2);
+    --color-accent-primary: #008f94;
+    /* Deeper Cyan */
+    --color-accent-secondary: #0f172a;
+    /* Very Dark Blue for emphasis */
+    --color-accent-glow: rgba(0, 143, 148, 0.2);
   
-    --texture-opacity: 0.15;
-    --glass-border: 1px solid rgba(0, 0, 0, 0.08);
-    /* Stronger border */
-    --shadow-sm: 0 4px 6px -1px rgba(44, 36, 32, 0.1);
-    --shadow-md: 0 10px 30px -5px rgba(44, 36, 32, 0.12);
+    --texture-opacity: 0.02;
+    --glass-border: 1px solid rgba(0, 143, 148, 0.15);
+    --shadow-sm: 0 4px 6px -1px rgba(15, 23, 42, 0.08);
+    --shadow-md: 0 10px 30px -5px rgba(15, 23, 42, 0.12);
 }
 
-/* Paper Texture */
+/* Grid Texture */
 body {
   background-color: var(--color-bg);
-  /* Realistic Paper Texture: Turbulence + Diffuse Lighting */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400' opacity='1'%3E%3Cfilter id='paper' x='0%25' y='0%25' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' result='noise'/%3E%3CfeDiffuseLighting in='noise' lighting-color='white' surfaceScale='2'%3E%3CfeDistantLight azimuth='45' elevation='60'/%3E%3C/feDiffuseLighting%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23paper)'/%3E%3C/svg%3E");
-  background-blend-mode: multiply;
+  /* Tech Grid Texture */
+  background-image: linear-gradient(rgba(0, 194, 199, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 194, 199, 0.03) 1px, transparent 1px);
+  background-size: 20px 20px;
   color: var(--color-text-main);
   font-family: var(--font-body);
   margin: 0;
@@ -103,7 +100,7 @@ body {
   position: relative;
   }
   
-  /* Texture Overlay to handle opacity via CSS var */
+  /* Texture Overlay */
   body::before {
     content: "";
     position: absolute;
@@ -112,8 +109,8 @@ body {
     width: 100%;
     height: 100%;
     pointer-events: none;
-    background-image: inherit;
-    opacity: var(--texture-opacity);
+    background: radial-gradient(circle at center, transparent 0%, var(--color-bg) 100%);
+    opacity: 0.8;
     z-index: -1;
   }
   
