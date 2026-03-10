@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+import missionsData from '../data/missions.json';
+
 class ViewSplash extends HTMLElement {
   connectedCallback() {
     const startText = "Start Session";
@@ -245,7 +247,13 @@ class ViewSplash extends HTMLElement {
       setTimeout(() => {
         this.dispatchEvent(new CustomEvent('navigate', {
           bubbles: true,
-          detail: { view: 'missions' }
+          detail: {
+            view: 'chat',
+            mission: missionsData[0],
+            language: 'English',
+            fromLanguage: 'English',
+            mode: missionsData[0].mode || 'lars'
+          }
         }));
       }, 500);
     });

@@ -15,7 +15,6 @@
  */
 
 import './view-splash.js';
-import './view-missions.js';
 import './view-chat.js';
 import './view-summary.js';
 import './text-cycler.js';
@@ -255,9 +254,6 @@ class AppRoot extends HTMLElement {
         switch (this.state.view) {
             case 'splash':
                 currentView = document.createElement('view-splash');
-                break;
-            case 'missions':
-                currentView = document.createElement('view-missions');
                 break;
             case 'chat':
                 currentView = document.createElement('view-chat');

@@ -344,7 +344,7 @@ class ViewChat extends HTMLElement {
       this.dispatchEvent(
         new CustomEvent("navigate", {
           bubbles: true,
-          detail: { view: "mission-selector" },
+          detail: { view: "splash" },
         }),
       );
     });

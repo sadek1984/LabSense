@@ -105,7 +105,7 @@ class ViewSummary extends HTMLElement {
     btn.addEventListener('click', () => {
       this.dispatchEvent(new CustomEvent('navigate', {
         bubbles: true,
-        detail: { view: 'missions', mission: null, result: null }
+        detail: { view: 'splash', mission: null, result: null }
       }));
     });
   }
