@@ -1,54 +1,16 @@
 [
   {
-    "id": "pesticide-search",
-    "title": "🔍 بحث عن مبيد",
-    "subtitle": "Pesticide Search",
-    "description": "ابحث عن مبيد محدد في أنواع العينات",
+    "id": "lars-session",
+    "title": "LARS Voice Assistant",
+    "subtitle": "Pesticide Residue Analysis",
+    "description": "Ask LARS about pesticide residues, violations, neighborhood statistics, and food safety risk assessments using your voice.",
     "persona": "LARS Assistant",
-    "objective": "Search pesticide residue database",
+    "objective": "Query the pesticide residue database",
     "example_phrases": [
-      "ابحث عن الفيبرونيل في الفاصوليا",
-      "Find imidacloprid in tomatoes"
+      "Find imidacloprid in tomatoes",
+      "How many samples exceed the MRL limit?",
+      "Rank neighborhoods by violations"
     ],
-    "mode": "bilingual"
-  },
-  {
-    "id": "violation-count",
-    "title": "📊 عدد المخالفات",
-    "subtitle": "Violation Count", 
-    "description": "كم عينة تجاوزت الحد المسموح؟",
-    "persona": "LARS Assistant",
-    "objective": "Count samples exceeding limits",
-    "example_phrases": [
-      "عدد عينات الطماطم فوق الحد",
-      "How many cucumber samples exceed the limit?"
-    ],
-    "mode": "bilingual"
-  },
-  {
-    "id": "neighborhood-analysis",
-    "title": "🏘️ تحليل الأحياء",
-    "subtitle": "Neighborhood Analysis",
-    "description": "المبيدات والمخالفات حسب الحي",
-    "persona": "LARS Assistant", 
-    "objective": "Analyze pesticide violations by neighborhood",
-    "example_phrases": [
-      "ترتيب الأحياء حسب المخالفات",
-      "What pesticides are in Al-Iskan neighborhood?"
-    ],
-    "mode": "bilingual"
-  },
-  {
-    "id": "stats",
-    "title": "📈 إحصائيات",
-    "subtitle": "Pesticide Statistics",
-    "description": "أعلى وأقل وأوسط التركيزات",
-    "persona": "LARS Assistant",
-    "objective": "Get pesticide concentration statistics",
-    "example_phrases": [
-      "ما أعلى تركيز للإيميداكلوبريد؟",
-      "Average chlorpyrifos concentration in tomatoes?"
-    ],
-    "mode": "bilingual"
+    "mode": "lars"
   }
 ]
