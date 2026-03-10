@@ -12,44 +12,96 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import google.genai as genai
-from google.genai import types
+import os
 import asyncio
-import base64
 import json
 import logging
 import inspect
+import requests as _requests
 from typing import Optional, List, Dict, Callable
 
+from google import genai
+from google.genai import types
+from google.oauth2 import service_account
+
 logger = logging.getLogger(__name__)
+
 
 class GeminiLive:
     def __init__(self, project_id: str, location: str, model: str, input_sample_rate: int = 16000):
         self.project_id = project_id
         self.location = location
-        self.model = model
         self.input_sample_rate = input_sample_rate
-        print("🚀 GeminiLive initialized with:")
-        print(f"  Project ID: {project_id}")
-        print(f"  Location: {location}")
-        print(f"  Model: {model}")
-        print(f"  Input Sample Rate: {input_sample_rate}")
-        
-        import os
-        from google import genai
 
-        self.client = genai.Client(
-            api_key=os.environ.get("GEMINI_API_KEY"),
-            http_options={"api_version": "v1alpha"}
-        )
+        # ── Vertex AI model name mapping ──────────────────────────────────────
+        # AI Studio model names are NOT valid on Vertex AI.
+        # Map any known AI Studio names to the correct Vertex AI equivalents.
+        VERTEX_MODEL_MAP = {
+            "gemini-2.5-flash-native-audio-preview-12-2025": "gemini-2.0-flash-exp",
+            "gemini-2.0-flash-exp":                          "gemini-2.0-flash-exp",
+            "gemini-2.0-flash-live-preview":                 "gemini-2.0-flash-exp",
+        }
+        self.model = VERTEX_MODEL_MAP.get(model, model)
+
+        print("🚀 GeminiLive initialized with:")
+        print(f"  Project ID:   {project_id}")
+        print(f"  Location:     {location}")
+        print(f"  Model:        {self.model}  (requested: {model})")
+        print(f"  Sample Rate:  {input_sample_rate}")
+
+        # ── Vertex AI client via service account JSON ─────────────────────────
+        _creds_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+
+        if _creds_path and os.path.exists(_creds_path):
+            _credentials = service_account.Credentials.from_service_account_file(
+                _creds_path,
+                scopes=["https://www.googleapis.com/auth/cloud-platform"]
+            )
+            self.client = genai.Client(
+                vertexai=True,
+                project=project_id,
+                location=location,
+                credentials=_credentials,
+                http_options={"api_version": "v1beta1"}
+            )
+            print(f"✅ Vertex AI client ready (service account: {_creds_path})")
+        else:
+            # Fallback: Application Default Credentials (works on Cloud Run automatically)
+            self.client = genai.Client(
+                vertexai=True,
+                project=project_id,
+                location=location,
+                http_options={"api_version": "v1beta1"}
+            )
+            print("✅ Vertex AI client ready (Application Default Credentials)")
+
+        # ── Tool registry ─────────────────────────────────────────────────────
         self.tool_mapping = {}
 
+        # Register LARS as a server-side tool.
+        # Calls the /api/lars/query HTTP endpoint (same FastAPI process).
+        @self.register_tool
+        def search_pesticide_data(question: str) -> str:
+            """Search the pesticide residue database for any question."""
+            try:
+                resp = _requests.post(
+                    "http://localhost:8080/api/lars/query",
+                    json={"question": question},
+                    timeout=30
+                )
+                data = resp.json()
+                return data.get("answer", str(data))
+            except Exception as e:
+                return f"LARS query failed: {e}"
+
+    # ─────────────────────────────────────────────────────────────────────────
     def register_tool(self, func: Callable):
         self.tool_mapping[func.__name__] = func
         return func
 
+    # ─────────────────────────────────────────────────────────────────────────
     async def start_session(
-        self, 
+        self,
         audio_input_queue: asyncio.Queue,
         video_input_queue: asyncio.Queue,
         text_input_queue: asyncio.Queue,
@@ -62,7 +114,7 @@ class GeminiLive:
         config_args = {
             "response_modalities": [types.Modality.AUDIO]
         }
-        
+
         if setup_config:
             if "generation_config" in setup_config:
                 gen_config = setup_config["generation_config"]
@@ -103,22 +155,17 @@ class GeminiLive:
                 except Exception as e:
                     logger.warning(f"Error parsing tools config: {e}")
 
-        if "output_audio_transcription" in setup_config:
-            print("💬 output_audio_transcription ENABLED")
-            config_args["output_audio_transcription"] = types.AudioTranscriptionConfig()
-        if "input_audio_transcription" in setup_config:
-            print("💬 input_audio_transcription ENABLED")
-            config_args["input_audio_transcription"] = types.AudioTranscriptionConfig()
-        
-        try:
-            print("📸 Vision enabled: MEDIA_RESOLUTION_MEDIUM")
-        except Exception as e:
-            logger.warning(f"Could not set media_resolution: {e}")
-        
+            if "output_audio_transcription" in setup_config:
+                print("💬 output_audio_transcription ENABLED")
+                config_args["output_audio_transcription"] = types.AudioTranscriptionConfig()
+            if "input_audio_transcription" in setup_config:
+                print("💬 input_audio_transcription ENABLED")
+                config_args["input_audio_transcription"] = types.AudioTranscriptionConfig()
+
         config = types.LiveConnectConfig(**config_args)
-        
+
         async with self.client.aio.live.connect(model=self.model, config=config) as session:
-            
+
             async def send_audio():
                 try:
                     while True:
@@ -135,8 +182,9 @@ class GeminiLive:
                 try:
                     while True:
                         chunk = await video_input_queue.get()
-                        # Images handled in send_text via client_content
-                        pass
+                        await session.send_realtime_input(
+                            video=types.Blob(data=chunk, mime_type="image/jpeg")
+                        )
                 except asyncio.CancelledError:
                     pass
 
@@ -144,129 +192,69 @@ class GeminiLive:
                 try:
                     while True:
                         text = await text_input_queue.get()
-                        
+                        # Handle image blobs sent as JSON
                         try:
                             parsed = json.loads(text)
-                            
-                            # ── Handle image messages ──────────────────────────────
                             if isinstance(parsed, dict) and "_image" in parsed:
                                 import base64 as b64
                                 image_bytes = b64.b64decode(parsed["_image"])
                                 mime_type = parsed.get("_mime", "image/jpeg")
-                                try:
-                                    # ✅ FIX: Use send_realtime_input with video= parameter.
-                                    # send_client_content with inline_data is NOT supported
-                                    # by native-audio Live API models and causes error 1008.
-                                    await session.send_realtime_input(
-                                        video=types.Blob(
-                                            data=image_bytes,
-                                            mime_type=mime_type
-                                        )
-                                    )
-                                    print(f"📸 Image sent to Gemini via realtime_input: {len(image_bytes)} bytes")
-
-                                    # Send a text prompt so Gemini knows to describe the image
-                                    await session.send_client_content(
-                                        turns=types.Content(
-                                            role="user",
-                                            parts=[types.Part(text="I just sent you a photo. Describe what you see.")]
-                                        ),
-                                        turn_complete=True
-                                    )
-                                except Exception as img_err:
-                                    print(f"❌ Image send FAILED: {type(img_err).__name__}: {img_err}")
+                                await session.send_realtime_input(
+                                    video=types.Blob(data=image_bytes, mime_type=mime_type)
+                                )
+                                await session.send_client_content(
+                                    turns=types.Content(
+                                        role="user",
+                                        parts=[types.Part(text="I just sent you a photo. Describe what you see.")]
+                                    ),
+                                    turn_complete=True
+                                )
                                 continue
-                            
-                            # ── Handle tool responses from client ──────────────────
+
+                            # Handle tool responses forwarded from the client browser
                             if isinstance(parsed, dict) and "tool_response" in parsed:
-                                print(f"🔧 Received tool response from client: {parsed}")
-                                
                                 tool_response_data = parsed["tool_response"]
                                 function_responses = []
-                                
-                                if "function_responses" in tool_response_data:
-                                    for resp in tool_response_data["function_responses"]:
-                                        # ✅ FIX: Normalize the response value to use "output" key.
-                                        # Gemini SDK requires the response dict to have an "output" key.
-                                        # If the client sent {"result": ...} we remap it here.
-                                        raw_response = resp.get("response", {})
-                                        if isinstance(raw_response, str):
-                                            normalized_response = {"output": raw_response}
-                                        elif isinstance(raw_response, dict):
-                                            if "output" not in raw_response:
-                                                # remap "result" or "error" → "output"
-                                                output_value = raw_response.get(
-                                                    "result",
-                                                    raw_response.get("error", str(raw_response))
-                                                )
-                                                normalized_response = {"output": str(output_value)}
-                                            else:
-                                                normalized_response = raw_response
-                                        else:
-                                            normalized_response = {"output": str(raw_response)}
 
-                                        fn_id   = resp.get("id", resp.get("response_id", ""))
-                                        fn_name = resp.get("name", "search_pesticide_data")
+                                responses_list = tool_response_data.get("function_responses", [])
+                                if not responses_list and "id" in tool_response_data:
+                                    responses_list = [tool_response_data]
 
-                                        print(f"  📝 FunctionResponse: name={fn_name}, id={fn_id}, output_len={len(str(normalized_response))}")
-
-                                        function_responses.append(types.FunctionResponse(
-                                            name=fn_name,
-                                            id=fn_id,
-                                            response=normalized_response
-                                        ))
-
-                                elif "id" in tool_response_data and "response" in tool_response_data:
-                                    raw_response = tool_response_data.get("response", {})
-                                    if isinstance(raw_response, dict) and "output" not in raw_response:
-                                        output_value = raw_response.get(
-                                            "result",
-                                            raw_response.get("error", str(raw_response))
-                                        )
-                                        normalized_response = {"output": str(output_value)}
+                                for resp in responses_list:
+                                    raw = resp.get("response", {})
+                                    if isinstance(raw, str):
+                                        normalized = {"output": raw}
+                                    elif isinstance(raw, dict):
+                                        normalized = raw if "output" in raw else {"output": str(raw.get("result", raw.get("error", str(raw))))}
                                     else:
-                                        normalized_response = raw_response if isinstance(raw_response, dict) else {"output": str(raw_response)}
+                                        normalized = {"output": str(raw)}
 
                                     function_responses.append(types.FunctionResponse(
-                                        name=tool_response_data.get("name", "search_pesticide_data"),
-                                        id=tool_response_data["id"],
-                                        response=normalized_response
+                                        name=resp.get("name", "search_pesticide_data"),
+                                        id=resp.get("id", resp.get("response_id", "")),
+                                        response=normalized
                                     ))
-                                
+
                                 if function_responses:
-                                    print(f"📤 Forwarding {len(function_responses)} tool response(s) to Gemini")
                                     try:
                                         await session.send_tool_response(function_responses=function_responses)
-                                        print("✅ Tool response sent — Gemini will now speak")
                                     except Exception as e:
-                                        # Non-fatal: This commonly happens when a tool response
-                                        # arrives after the user interrupted. Gemini has already
-                                        # moved on and rejects the stale response. Log and continue.
-                                        err_msg = str(e).lower()
-                                        if "invalid" in err_msg or "unexpected" in err_msg or "state" in err_msg:
-                                            print(f"⚠️ Stale tool response rejected by Gemini (user likely interrupted): {type(e).__name__}: {e}")
-                                        else:
-                                            print(f"❌ Error sending tool response to Gemini (non-fatal): {type(e).__name__}: {e}")
-                                else:
-                                    print("⚠️ No valid function_responses parsed from tool_response message")
+                                        print(f"⚠️ Stale tool response rejected (non-fatal): {e}")
                                 continue
-                                
+
                         except json.JSONDecodeError:
                             pass
-                        
-                        # Regular text message
+
                         if text.strip():
-                            print(f"💬 Sending text to Gemini: {text[:50]}...")
                             try:
                                 await session.send(input=text, end_of_turn=True)
                             except Exception as e:
-                                print(f"❌ Error sending text to Gemini (non-fatal): {type(e).__name__}: {e}")
-                            
+                                print(f"❌ send_text error (non-fatal): {e}")
+
                 except asyncio.CancelledError:
                     pass
                 except Exception as e:
-                    # ✅ FIX: Log but don't propagate — prevents WebSocket teardown
-                    logger.error(f"send_text fatal error: {type(e).__name__}: {e}")
+                    logger.error(f"send_text fatal error: {e}")
 
             event_queue = asyncio.Queue()
 
@@ -276,7 +264,7 @@ class GeminiLive:
                         async for response in session.receive():
                             server_content = response.server_content
                             tool_call = response.tool_call
-                            
+
                             if server_content:
                                 if server_content.model_turn:
                                     for part in server_content.model_turn.parts:
@@ -285,19 +273,18 @@ class GeminiLive:
                                                 await audio_output_callback(part.inline_data.data)
                                             else:
                                                 audio_output_callback(part.inline_data.data)
-                                
+
                                 if server_content.input_transcription:
                                     await event_queue.put({
                                         "serverContent": {
                                             "inputTranscription": {
                                                 "text": server_content.input_transcription.text,
-                                                "finished": True 
+                                                "finished": True
                                             }
                                         }
                                     })
-                                
+
                                 if server_content.output_transcription:
-                                    print("output_transcription", server_content.output_transcription)
                                     await event_queue.put({
                                         "serverContent": {
                                             "outputTranscription": {
@@ -306,10 +293,10 @@ class GeminiLive:
                                             }
                                         }
                                     })
-                                
+
                                 if server_content.turn_complete:
                                     await event_queue.put({"serverContent": {"turnComplete": True}})
-                                
+
                                 if server_content.interrupted:
                                     await event_queue.put({"serverContent": {"interrupted": True}})
                                     if audio_interrupt_callback:
@@ -322,14 +309,14 @@ class GeminiLive:
                             if tool_call:
                                 function_responses = []
                                 client_tool_calls = []
-                                
-                                print(f"🎯 Received tool_call from Gemini: {tool_call}")
-                                
+
+                                print(f"🎯 Tool call from Gemini: {tool_call}")
+
                                 for fc in tool_call.function_calls:
                                     func_name = fc.name
                                     args = fc.args or {}
                                     print(f"  - Function: {func_name}, ID: {fc.id}, Args: {args}")
-                                    
+
                                     if func_name in self.tool_mapping:
                                         # Server-side tool — execute directly
                                         try:
@@ -339,19 +326,21 @@ class GeminiLive:
                                             else:
                                                 loop = asyncio.get_running_loop()
                                                 result = await loop.run_in_executor(None, lambda: tool_func(**args))
-                                            
-                                            function_responses.append(types.FunctionResponse(
-                                                name=func_name,
-                                                id=fc.id,
-                                                response={"output": str(result)}  # ✅ always "output" key
-                                            ))
                                         except Exception as e:
-                                            print(f"❌ Error executing server tool {func_name}: {e}")
-                                            function_responses.append(types.FunctionResponse(
-                                                name=func_name,
-                                                id=fc.id,
-                                                response={"output": f"Tool error: {e}"}
-                                            ))
+                                            result = f"Tool error: {e}"
+
+                                        # ✅ MUST use "output" key — Gemini SDK requires it
+                                        function_responses.append(types.FunctionResponse(
+                                            name=func_name,
+                                            id=fc.id,
+                                            response={"output": str(result)}
+                                        ))
+                                        await event_queue.put({
+                                            "type": "tool_call",
+                                            "name": func_name,
+                                            "args": args,
+                                            "result": str(result)
+                                        })
                                     else:
                                         # Client-side tool — forward to browser
                                         client_tool_calls.append({
@@ -359,24 +348,21 @@ class GeminiLive:
                                             "args": args,
                                             "id": fc.id
                                         })
-                                        print(f"  ⏩ Forwarding {func_name} to client with ID {fc.id}")
-                                
+                                        print(f"  ⏩ Forwarding {func_name} to client")
+
                                 if client_tool_calls:
-                                    tool_call_event = {
+                                    await event_queue.put({
                                         "toolCall": {
                                             "functionCalls": client_tool_calls
                                         }
-                                    }
-                                    print(f"📤 Sending tool call to client: {tool_call_event}")
-                                    await event_queue.put(tool_call_event)
-                                
+                                    })
+
                                 if function_responses:
-                                    print(f"📤 Sending {len(function_responses)} server tool response(s) to Gemini")
                                     try:
                                         await session.send_tool_response(function_responses=function_responses)
-                                        print("✅ Server tool response sent")
+                                        print("✅ Server tool response sent to Gemini")
                                     except Exception as e:
-                                        print(f"❌ Error sending server tool response (non-fatal): {type(e).__name__}: {e}")
+                                        print(f"❌ Error sending tool response (non-fatal): {e}")
 
                 except Exception as e:
                     logger.error(f"receive_loop error: {type(e).__name__}: {e}")
@@ -392,43 +378,37 @@ class GeminiLive:
             tasks = [send_audio_task, send_video_task, send_text_task, receive_task]
 
             try:
-                # ── Drain event_queue concurrently while tasks run ──────────
-                # Previously, `asyncio.wait(tasks)` blocked until a task died,
-                # so the `yield event` loop never ran during normal operation.
-                # Now we yield events as they arrive and only exit when all
-                # tasks are done or one throws an exception.
                 while True:
                     try:
                         event = await asyncio.wait_for(event_queue.get(), timeout=0.5)
                         if event is None:
-                            # receive_loop has ended
                             break
                         yield event
                     except asyncio.TimeoutError:
                         pass
 
-                    # Check if any task threw an exception
+                    # Check if any task crashed
                     for task in tasks:
-                        if task.done() and task.exception() is not None:
-                            print(f"❌ Task failed: {task.get_name()}, exception: {task.exception()}")
-                            for t in tasks:
-                                if not t.done():
-                                    t.cancel()
-                            # Drain remaining events before exiting
-                            while not event_queue.empty():
-                                event = event_queue.get_nowait()
-                                if event is not None:
-                                    yield event
-                            return
+                        if task.done() and not task.cancelled():
+                            exc = task.exception()
+                            if exc is not None:
+                                print(f"❌ Task failed: {task.get_name()}: {exc}")
+                                for t in tasks:
+                                    if not t.done():
+                                        t.cancel()
+                                while not event_queue.empty():
+                                    ev = event_queue.get_nowait()
+                                    if ev is not None:
+                                        yield ev
+                                return
 
-                    # If all tasks finished, drain remaining events and exit
                     if all(t.done() for t in tasks):
                         while not event_queue.empty():
-                            event = event_queue.get_nowait()
-                            if event is not None:
-                                yield event
+                            ev = event_queue.get_nowait()
+                            if ev is not None:
+                                yield ev
                         break
-                        
+
             except asyncio.CancelledError:
                 print("Session cancelled")
             finally:

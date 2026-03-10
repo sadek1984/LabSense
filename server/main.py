@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 # Configuration
 PROJECT_ID = get_project_id()
 LOCATION = os.getenv("LOCATION", "us-central1")
-MODEL = os.getenv("MODEL", "gemini-2.5-flash-native-audio-preview-12-2025")
+MODEL = os.getenv("MODEL", "gemini-2.0-flash-exp")
 # Use a very long timeout for dev
 SESSION_TIME_LIMIT = int(os.getenv("SESSION_TIME_LIMIT", "180"))
 RECAPTCHA_SITE_KEY = os.getenv("RECAPTCHA_SITE_KEY")

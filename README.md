@@ -215,3 +215,5 @@ DEV_MODE=true uvicorn server.main:app --host 0.0.0.0 --port 8080 --reload
 ngrok http 5173 --scheme https
 
 https://7781-2001-16a3-d75-2200-25b8-e089-9cea-661d.ngrok-free.app -> http://localhost:5173 
+
+GEMINI_API_KEY=AIzaSyAU6lbqS8zOHh2ZDBO8GXcKV3Z-4X6OgUk
