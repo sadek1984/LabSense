@@ -154,7 +154,7 @@ import google.generativeai as genai
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 
 model = genai.GenerativeModel(
-    model_name="gemini-2.0-flash-exp",  # or whatever model you're using
+    model_name="gemini-2.0-flash-001",  # or whatever model you're using
     system_instruction=LARS_SYSTEM_PROMPT,
     tools=[LARS_TOOL],
 )

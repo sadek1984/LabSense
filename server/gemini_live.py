@@ -37,9 +37,11 @@ class GeminiLive:
         # AI Studio model names are NOT valid on Vertex AI.
         # Map any known AI Studio names to the correct Vertex AI equivalents.
         VERTEX_MODEL_MAP = {
-            "gemini-2.5-flash-native-audio-preview-12-2025": "gemini-2.0-flash-exp",
-            "gemini-2.0-flash-exp":                          "gemini-2.0-flash-exp",
-            "gemini-2.0-flash-live-preview":                 "gemini-2.0-flash-exp",
+            "gemini-2.5-flash-native-audio-preview-12-2025": "gemini-live-2.5-flash-native-audio",
+            "gemini-2.0-flash-exp":                          "gemini-live-2.5-flash-native-audio",
+            "gemini-2.0-flash-001":                          "gemini-live-2.5-flash-native-audio",
+            "gemini-2.0-flash-live-001":                     "gemini-live-2.5-flash-native-audio",
+            "gemini-2.0-flash-live-preview":                 "gemini-live-2.5-flash-native-audio",
         }
         self.model = VERTEX_MODEL_MAP.get(model, model)
 
