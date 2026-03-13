@@ -205,3 +205,13 @@ Built on top of [Immersive Language Learning with Live API](https://github.com/Z
 ## License
 
 This project is licensed under the Apache License 2.0 — see the [LICENSE](LICENSE) file for details.
+
+## Testing
+
+1. Open the live demo: https://lars-backend-863449087382.us-central1.run.app
+2. Click **Start Session** and allow microphone access
+3. Ask any of these questions out loud:
+   - "How many samples were tested in 2024?"
+   - "Show me Bifenthrin violations"
+   - "What is the compliance rate for tomatoes?"
+4. LARS will respond with voice and transcript
