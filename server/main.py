@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from dotenv import load_dotenv
-from server.recaptcha_validator import RecaptchaValidator
+# from server.recaptcha_validator import RecaptchaValidator
 from server.gemini_live import GeminiLive
 from server.fingerprint import generate_fingerprint
 from server.simple_tracker import simpletrack
@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 # Configuration
 PROJECT_ID = get_project_id()
 LOCATION = os.getenv("LOCATION", "us-central1")
-MODEL = os.getenv("MODEL", "gemini-2.5-flash-native-audio-preview-12-2025")
+MODEL = os.getenv("MODEL", "gemini-2.0-flash-001")
 # Use a very long timeout for dev
 SESSION_TIME_LIMIT = int(os.getenv("SESSION_TIME_LIMIT", "180"))
 RECAPTCHA_SITE_KEY = os.getenv("RECAPTCHA_SITE_KEY")
@@ -158,7 +158,45 @@ async def serve_spa(full_path: str):
     
     # Fallback to index.html for SPA routing
     return FileResponse("dist/index.html")
-
+@app.post("/api/lars/query")
+async def lars_query(request: Request):
+    data = await request.json()
+    question = data.get("question", "") or data.get("query", "")
+    
+    try:
+        from server.lars_service import get_lars_engine
+        engine = get_lars_engine()
+        
+        # Try the most likely method first
+        if hasattr(engine, "process"):
+            result = engine.process(question)
+        elif hasattr(engine, "query"):  # Some engines use .query()
+            result = engine.query(question)
+        elif hasattr(engine, "ask"):     # Some use .ask()
+            result = engine.ask(question)
+        elif hasattr(engine, "process_query"):  # Some use .process_query()
+            result = engine.process_query(question)
+        else:
+            return {"answer": "LARS engine has no query method available."}
+        
+        # Handle different return types intelligently
+        if isinstance(result, tuple):
+            # If it's a tuple, assume first element is the answer text
+            answer_text = str(result[0]) if len(result) > 0 else "No response"
+        elif isinstance(result, dict):
+            # If it's a dict, look for common answer fields
+            answer_text = result.get("answer") or result.get("response") or result.get("text") or str(result)
+        else:
+            # Just convert to string
+            answer_text = str(result)
+        
+        return {"answer": answer_text}
+        
+    except Exception as e:
+        # Log the full error for debugging
+        import traceback
+        print(f"❌ LARS error: {traceback.format_exc()}")
+        return {"answer": f"Error querying LARS: {str(e)}"}
 @app.post("/api/auth")
 @simpletrack("session_start")
 @limiter.limit(GLOBAL_RATE_LIMIT, key_func=get_global_key)
@@ -269,15 +307,23 @@ async def websocket_endpoint(websocket: WebSocket, token: Optional[str] = None):
                     try:
                         payload = json.loads(text)
                         if isinstance(payload, dict) and payload.get("type") == "image":
-                            # Handle base64 image
-                            image_data = base64.b64decode(payload["data"])
-                            await video_input_queue.put(image_data)
+                            # OLD handler - DISABLE this, use realtime_input path instead
+                            # image_data = base64.b64decode(payload["data"])
+                            # await video_input_queue.put(image_data)
                             continue
                         elif isinstance(payload, dict) and "realtime_input" in payload:
-                             # Forward realtime input (audio/video chunks)
-                             # The SDK JS sends 'realtime_input' for generic media chunks
-                             # For now we handle simpler case or adapt GeminiLive class
-                             pass
+                             # Forward image as content message via text queue
+                             try:
+                                 media_chunks = payload["realtime_input"].get("media_chunks", [])
+                                 for chunk in media_chunks:
+                                     mime = chunk.get("mime_type", "")
+                                     if mime.startswith("image/"):
+                                         image_msg = json.dumps({"_image": chunk["data"], "_mime": mime})
+                                         await text_input_queue.put(image_msg)
+                                         logger.info(f"📸 Image queued for Gemini: {mime}")
+                             except Exception as e:
+                                 logger.error(f"Error processing realtime_input: {e}")
+                             continue
                     except json.JSONDecodeError:
                         pass
                     

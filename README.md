@@ -1,4 +1,4 @@
-# Immersive Language Learning with Live API
+# lars
 
 [![GitHub stars](https://img.shields.io/github/stars/ZackAkil/immersive-language-learning-with-live-api?style=social)](https://github.com/ZackAkil/immersive-language-learning-with-live-api/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/ZackAkil/immersive-language-learning-with-live-api?style=social)](https://github.com/ZackAkil/immersive-language-learning-with-live-api/network/members)
@@ -204,3 +204,14 @@ Once you're happy with your changes, use the **One-Click Deployment** or use Ant
 
 ## run server
 export $(cat .env | xargs) && python3 -m server.main
+
+## The model used by the Google API in your project is 
+gemini-2.5-flash-native-audio-preview-12-2025
+
+## run server
+DEV_MODE=true uvicorn server.main:app --host 0.0.0.0 --port 8080 --reload
+
+## run ngrok
+ngrok http 5173 --scheme https
+
+

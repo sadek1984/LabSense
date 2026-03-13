@@ -18,7 +18,7 @@ import datetime
 import json
 import inspect
 from functools import wraps
-from google.cloud import bigquery
+# from google.cloud import bigquery
 from dotenv import load_dotenv
 
 load_dotenv(override=True)

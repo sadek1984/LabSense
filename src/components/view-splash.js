@@ -14,14 +14,11 @@
  * limitations under the License.
  */
 
+import missionsData from '../data/missions.json';
+
 class ViewSplash extends HTMLElement {
   connectedCallback() {
-    const startTranslations = [
-      "ابدأ", "Comenzar", "Commencer",
-      "شروع کرें", "Mulai", "Inizia", "スタート", "시작",
-      "Começar", "Начать", "เริ่ม", "Başla", "Bắt đầu", "Почати", "শুরু",
-      "साुरु करा", "தொடங்கு", "ప్రారంభించు"
-    ];
+    const startText = "Start Session";
 
     this.innerHTML = `
       <style>
@@ -167,23 +164,22 @@ class ViewSplash extends HTMLElement {
         <!-- Main Content -->
         <div class="content-wrapper">
 
-          <h1 class="mystic-title">Immersive Language Learning</h1>
+          <h1 class="mystic-title">LARS — Lab Analysis & Risk System</h1>
 
           <p style="
-            font-family: 'Playfair Display', serif;
-            font-style: italic;
-            font-size: clamp(1.2rem, 4vw, 2rem);
+            font-family: var(--font-body);
+            font-size: clamp(1rem, 3vw, 1.4rem);
             opacity: 0.8;
             margin-bottom: var(--spacing-xl);
             color: var(--color-text-sub);
             text-align: center;
             max-width: 600px;
           ">
-            Intense immersive language learning experience.
+            Your voice-powered assistant for pesticide residue data, food safety violations & risk analysis.
           </p>
 
           <div style="margin-top: var(--spacing-lg);">
-            <p style="font-size: 1.3rem; opacity: 0.6; color: var(--color-text-secondary); text-align: center; line-height: 1.6;">
+            <p style="font-size: 1rem; opacity: 0.6; color: var(--color-text-secondary); text-align: center; line-height: 1.6;">
               Powered by <br>
               <a href="https://docs.cloud.google.com/vertex-ai/generative-ai/docs/live-api" target="_blank" class="powered-by-link">
                 Gemini Live API on Vertex AI
@@ -194,7 +190,7 @@ class ViewSplash extends HTMLElement {
           <!-- CTA Section -->
           <div style="margin-top: calc(var(--spacing-xxl) * 1.5); width: 100%; display: flex; justify-content: center;">
             <button id="start-btn" class="mystic-btn">
-              <text-cycler text="Start" values='${JSON.stringify(startTranslations).replace(/'/g, "&apos;").replace(/"/g, "&quot;")}'></text-cycler>
+              ${startText}
             </button>
           </div>
 
@@ -215,7 +211,7 @@ class ViewSplash extends HTMLElement {
           padding: 0 var(--spacing-md);
           z-index: 15;
         ">
-            <strong>Disclaimer:</strong> This application is for demo purposes only. This is not an official product. May produce inaccurate, unexpected, or offensive results. Present to a live audience at your own risk.
+            <strong>Disclaimer:</strong> This application is a demonstration of the Lab Analysis & Risk System (LARS). Results may not be definitive. Use for lab analysis guidance only.
         </div>
 
       </div>
@@ -225,19 +221,14 @@ class ViewSplash extends HTMLElement {
     const host = this.querySelector('#particles-host');
     const particleCount = 30; // Increased count slightly for more depth
     const alphabets = [
-      "ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ", // Greek
-      "अआइईउऊऋएऐओऔकखगघङचछजझञ", // Hindi
-      "あいうえおかがきぎくぐけげこご", // Japanese
-      "ABCDEFGHIJKLMNOPQRSTUVWXYZ", // Latin
-      "אתבגדהוזחטיכלמנסעפצקרשת", // Hebrew
-      "가나다라마바사아자차카타파하" // Korean (Added for diversity)
+      "% MRL", "mg/kg", "ppm", "≤", "≥", "Σ", "∆", "µg", "LC50", "ADI"
     ];
 
     for (let i = 0; i < particleCount; i++) {
       const p = document.createElement('div');
       p.className = 'splash-particle';
-      const alphabet = alphabets[Math.floor(Math.random() * alphabets.length)];
-      p.textContent = alphabet[Math.floor(Math.random() * alphabet.length)];
+      const symbol = alphabets[Math.floor(Math.random() * alphabets.length)];
+      p.textContent = symbol;
       p.style.left = `${Math.random() * 100}%`;
       p.style.animationDelay = `${Math.random() * 15}s`;
       p.style.animationDuration = `${10 + Math.random() * 10}s`;
@@ -256,7 +247,13 @@ class ViewSplash extends HTMLElement {
       setTimeout(() => {
         this.dispatchEvent(new CustomEvent('navigate', {
           bubbles: true,
-          detail: { view: 'missions' }
+          detail: {
+            view: 'chat',
+            mission: missionsData[0],
+            language: 'English',
+            fromLanguage: 'English',
+            mode: missionsData[0].mode || 'lars'
+          }
         }));
       }, 500);
     });

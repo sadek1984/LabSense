@@ -122,12 +122,16 @@ export class FunctionCallDefinition {
   }
 
   runFunction(parameters) {
-    console.log(
-      `⚡ Running ${this.name} function with parameters: ${JSON.stringify(
-        parameters
-      )}`
-    );
-    this.functionToCall(parameters);
+    console.log(`⚡ Running ${this.name} with params:`, parameters);
+    if (typeof this.functionToCall !== 'function') {
+      console.error(`❌ functionToCall for ${this.name} is not a function`);
+      return;
+    }
+    try {
+      this.functionToCall(parameters);
+    } catch (e) {
+      console.error(`❌ Error in ${this.name} functionToCall:`, e);
+    }
   }
 }
 
@@ -228,8 +232,13 @@ export class GeminiLiveAPI {
   }
 
   callFunction(functionName, parameters) {
-    const functionToCall = this.functionsMap[functionName];
-    functionToCall.runFunction(parameters);
+    const func = this.functionsMap[functionName];
+    if (!func) {
+      console.error(`❌ No function registered with name: ${functionName}`);
+      return;
+    }
+    console.log(`✅ Found function ${functionName}, calling runFunction`);
+    func.runFunction(parameters);
   }
 
   async connect(token) {
@@ -308,8 +317,12 @@ export class GeminiLiveAPI {
     this.webSocket.binaryType = "arraybuffer";
 
     this.webSocket.onclose = (event) => {
-      console.log("websocket closed: ", event);
+      console.log(`🔒 WebSocket closed: code=${event.code}, reason='${event.reason}'`);
       this.connected = false;
+      // Don't treat clean closures as errors
+      if (event.code !== 1000 && event.code !== 1001) {
+        console.error(`WebSocket closed unexpectedly with code ${event.code}: ${event.reason}`);
+      }
       if (this.onClose) this.onClose(event);
     };
 
@@ -363,9 +376,9 @@ export class GeminiLiveAPI {
         tools: { function_declarations: tools },
         // proactivity removed
 
-        realtime_input_config: {
-          automatic_activity_detection: this.automaticActivityDetection,
-        },
+
+
+
       },
     };
 
@@ -388,7 +401,7 @@ export class GeminiLiveAPI {
 
     // Add affective dialog if enabled
     if (this.enableAffectiveDialog) {
-      sessionSetupMessage.setup.generation_config.enable_affective_dialog = true;
+      // enable_affective_dialog disabled
     }
 
     // Store the setup message for later access
@@ -413,15 +426,25 @@ export class GeminiLiveAPI {
     this.sendMessage(textMessage);
   }
 
-  sendToolResponse(toolCallId, response) {
+  sendToolResponse(toolCallId, functionName, response) {
+    // Format that matches what the server expects
     const message = {
       tool_response: {
-        id: toolCallId,
-        response: response,
-      },
+        function_responses: [{
+          id: toolCallId,
+          name: functionName,
+          response: response
+        }]
+      }
     };
-    console.log("🔧 Sending tool response:", message);
-    this.sendMessage(message);
+
+    console.log("🔧 Client sending tool response:", JSON.stringify(message, null, 2));
+
+    if (this.webSocket && this.webSocket.readyState === WebSocket.OPEN) {
+      this.webSocket.send(JSON.stringify(message));
+    } else {
+      console.error("❌ WebSocket not open when sending tool response");
+    }
   }
 
   sendRealtimeInputMessage(data, mime_type) {

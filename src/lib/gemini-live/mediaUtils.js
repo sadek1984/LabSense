@@ -400,7 +400,8 @@ export class ScreenCapture extends BaseVideoCapture {
 }
 
 /**
- * Audio Player - Plays audio responses from Gemini
+ * Audio Player - Plays PCM audio from Gemini Live API
+ * Handles playback with interruption support
  */
 export class AudioPlayer {
   constructor() {
@@ -408,8 +409,12 @@ export class AudioPlayer {
     this.workletNode = null;
     this.gainNode = null;
     this.isInitialized = false;
+    this.isPlaying = false; // Track playback state
     this.volume = 1.0;
     this.sampleRate = 24000; // Gemini outputs at 24kHz
+    this.onInterrupted = null; // Callback for interruption events
+    this.onPlaybackStarted = null; // Callback when playback starts
+    this.onPlaybackEnded = null; // Callback when playback ends naturally
   }
 
   /**
@@ -440,6 +445,19 @@ export class AudioPlayer {
         this.audioContext,
         "pcm-processor"
       );
+
+      // Listen for worklet messages (playback status)
+      this.workletNode.port.onmessage = (event) => {
+        if (event.data === "ended") {
+          this.isPlaying = false;
+          console.log("🔊 Audio playback ended naturally");
+          if (this.onPlaybackEnded) this.onPlaybackEnded();
+        } else if (event.data === "started") {
+          this.isPlaying = true;
+          console.log("🔊 Audio playback started");
+          if (this.onPlaybackStarted) this.onPlaybackStarted();
+        }
+      };
 
       // Create gain node for volume control
       this.gainNode = this.audioContext.createGain();
@@ -496,6 +514,8 @@ export class AudioPlayer {
 
       // Send to worklet for playback
       this.workletNode.port.postMessage(float32Data);
+
+      // Note: isPlaying will be set to true when worklet sends "started" message
     } catch (error) {
       console.error("Error playing audio chunk:", error);
       throw error;
@@ -503,12 +523,41 @@ export class AudioPlayer {
   }
 
   /**
-   * Interrupt current playback
+   * Interrupt current playback immediately
    */
   interrupt() {
-    if (this.workletNode) {
-      this.workletNode.port.postMessage("interrupt");
+    if (!this.workletNode) return;
+
+    console.log("🛑 Interrupting audio playback");
+
+    // Send interrupt signal to worklet to flush its buffer
+    this.workletNode.port.postMessage("interrupt");
+
+    // Update state
+    this.isPlaying = false;
+
+    // Call callback if registered
+    if (this.onInterrupted) {
+      this.onInterrupted();
     }
+
+    // Immediately zero the gain to cut audio output,
+    // then restore after the worklet has had time to flush (~100ms)
+    if (this.gainNode && this.audioContext) {
+      this.gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
+      setTimeout(() => {
+        if (this.gainNode && this.audioContext) {
+          this.gainNode.gain.setValueAtTime(this.volume, this.audioContext.currentTime);
+        }
+      }, 120);
+    }
+  }
+
+  /**
+   * Check if audio is currently playing
+   */
+  get isActive() {
+    return this.isPlaying;
   }
 
   /**
@@ -525,10 +574,18 @@ export class AudioPlayer {
    * Clean up resources
    */
   destroy() {
+    if (this.workletNode) {
+      this.workletNode.port.postMessage("interrupt");
+      this.workletNode.disconnect();
+      this.workletNode = null;
+    }
+
     if (this.audioContext) {
       this.audioContext.close();
       this.audioContext = null;
     }
+
     this.isInitialized = false;
+    this.isPlaying = false;
   }
 }
