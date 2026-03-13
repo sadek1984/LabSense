@@ -37,4 +37,4 @@ scripts/deploy.sh
 deploy.sh
 .pytest_cache/
 
-# gcp-credentials.jsongcp-credentials.json
+gcp-credentials.json
