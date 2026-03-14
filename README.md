@@ -5,10 +5,15 @@
 [![Cloud Run](https://img.shields.io/badge/Google%20Cloud%20Run-4285F4?style=flat&logo=google-cloud&logoColor=white)](https://cloud.google.com/run)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-**LARS** (Laboratory Analysis and Risk System) is a voice-activated AI assistant for food safety laboratories. Powered by **Google Gemini Live API**, it lets chemists and lab managers query pesticide residue testing data through natural spoken conversation — no typing required.
+**LARS** (Laboratory Analysis and Risk System) is a deterministic lab query engine 
+with a voice interface and LLM-based language understanding, built for food 
+safety laboratories in Saudi Arabia. Chemists and lab managers speak naturally — 
+LARS interprets intent, translates it into a constrained query plan, executes 
+deterministic queries against verified laboratory data, and speaks the answer back.
 
 > 🎙️ "How many tomato samples were tested in 2023?"  
-> 🤖 LARS responds instantly with accurate data from the laboratory database.
+> 🧠 LARS interprets intent → builds constrained query → executes against GC-MS/MS data  
+> 🤖 Speaks the verified answer with source, filters applied, and record count.
 
 ### [🚀 Try the Live Demo](https://lars-backend-863449087382.us-central1.run.app)
 
@@ -57,6 +62,12 @@ DuckDB (pesticide residue data)
 - **LARS frontend+backend** handles voice interface, WebSocket audio streaming, and Gemini Live session management.
 - **LARS Engine** is a private microservice that processes natural language queries against the laboratory database.
 - **Gemini Live** provides real-time bidirectional audio with sub-second latency.
+
+**Query pipeline:**
+1. Gemini Live API interprets the spoken question and extracts intent + entities
+2. LARS Engine translates into a constrained, validated query plan
+3. Backend executes deterministic SQL against DuckDB (no LLM touches the data)
+4. Response includes the answer, filters applied, and matched record count
 
 ---
 
