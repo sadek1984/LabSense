@@ -39,10 +39,10 @@ class LiveTranscript extends HTMLElement {
     const card = document.createElement('div');
     card.className = 'provenance-card';
     const rows = [
-      { icon: '📋', label: 'Records',    value: provenance.records ?? '—' },
-      { icon: '📊', label: 'Source',     value: provenance.source || '—' },
-      { icon: '🔍', label: 'Values',     value: (provenance.values || []).join(', ') || '—' },
-      { icon: '✅', label: 'Status',     value: provenance.status || '—' },
+      { icon: '📋', label: 'Records', value: provenance.records ?? '—' },
+      { icon: '📊', label: 'Source', value: provenance.source || '—' },
+      { icon: '🔍', label: 'Values', value: (provenance.values || []).join(', ') || '—' },
+      { icon: '✅', label: 'Status', value: provenance.status || '—' },
     ];
     card.innerHTML = rows.map(r =>
       '<div class="provenance-row">' +
@@ -195,23 +195,38 @@ class LiveTranscript extends HTMLElement {
 
         /* Scrollbar styling - hidden for cleaner look or minimal */
         .provenance-card {
-          align-self: flex-start;
-          background: rgba(92, 107, 72, 0.07);
-          border: 1px solid rgba(92, 107, 72, 0.22);
-          border-radius: 8px;
-          padding: 0.45rem 0.75rem;
-          font-size: 0.76rem;
-          margin-top: -0.2rem;
+          align-self: center;
+          background: var(--color-surface, rgba(255, 255, 255, 0.9));
+          border: 1px solid var(--glass-border, rgba(0, 143, 148, 0.15));
+          border-radius: 12px;
+          padding: 0.6rem 1rem;
+          font-size: 0.78rem;
+          margin: 0.5rem auto;
           animation: popIn 0.4s ease forwards;
-          max-width: 80%;
+          max-width: 340px;
+          width: fit-content;
+          box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.08);
+          backdrop-filter: blur(8px);
         }
-        .provenance-row { display: flex; align-items: center; gap: 0.4rem; padding: 0.08rem 0; }
-        .prov-icon { font-size: 0.82rem; }
-        .prov-label { font-weight: 600; color: #5c6b48; min-width: 90px; }
-        .prov-value { color: #444; }
-        .transcript-container::-webkit-scrollbar {
-          width: 0px; /* Hide scrollbar for seamless feel */
-          background: transparent;
+        .provenance-row {
+          display: flex;
+          align-items: baseline;
+          gap: 0.5rem;
+          padding: 0.15rem 0;
+          line-height: 1.4;
+        }
+        .prov-icon { font-size: 0.8rem; flex-shrink: 0; }
+        .prov-label {
+          font-weight: 600;
+          color: var(--color-accent-primary, #008f94);
+          min-width: 70px;
+          font-size: 0.72rem;
+          text-transform: uppercase;
+          letter-spacing: 0.03em;
+        }
+        .prov-value {
+          color: var(--color-text-main, #1e293b);
+          font-weight: 500;
         }
       </style>
       <div class="transcript-container">
