@@ -33,6 +33,28 @@ class LiveTranscript extends HTMLElement {
     this.updateTranscript('model', text, isFinal);
   }
 
+  addProvenance(provenance) {
+    const container = this.shadowRoot.querySelector('.transcript-container');
+    if (!container || !provenance) return;
+    const card = document.createElement('div');
+    card.className = 'provenance-card';
+    const rows = [
+      { icon: '📋', label: 'Records',    value: provenance.records ?? '—' },
+      { icon: '📊', label: 'Source',     value: provenance.source || '—' },
+      { icon: '🔍', label: 'Values',     value: (provenance.values || []).join(', ') || '—' },
+      { icon: '✅', label: 'Status',     value: provenance.status || '—' },
+    ];
+    card.innerHTML = rows.map(r =>
+      '<div class="provenance-row">' +
+      '<span class="prov-icon">' + r.icon + '</span>' +
+      '<span class="prov-label">' + r.label + '</span>' +
+      '<span class="prov-value">' + r.value + '</span>' +
+      '</div>'
+    ).join('');
+    container.appendChild(card);
+    container.scrollTop = container.scrollHeight;
+  }
+
   finalizeAll() {
     const container = this.shadowRoot.querySelector('.transcript-container');
     if (!container) return;
@@ -172,6 +194,21 @@ class LiveTranscript extends HTMLElement {
         }
 
         /* Scrollbar styling - hidden for cleaner look or minimal */
+        .provenance-card {
+          align-self: flex-start;
+          background: rgba(92, 107, 72, 0.07);
+          border: 1px solid rgba(92, 107, 72, 0.22);
+          border-radius: 8px;
+          padding: 0.45rem 0.75rem;
+          font-size: 0.76rem;
+          margin-top: -0.2rem;
+          animation: popIn 0.4s ease forwards;
+          max-width: 80%;
+        }
+        .provenance-row { display: flex; align-items: center; gap: 0.4rem; padding: 0.08rem 0; }
+        .prov-icon { font-size: 0.82rem; }
+        .prov-label { font-weight: 600; color: #5c6b48; min-width: 90px; }
+        .prov-value { color: #444; }
         .transcript-container::-webkit-scrollbar {
           width: 0px; /* Hide scrollbar for seamless feel */
           background: transparent;

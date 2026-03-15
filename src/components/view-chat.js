@@ -107,12 +107,12 @@ class ViewChat extends HTMLElement {
           </div>
         </div>
 
-        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: ${this._mode === "immergo_teacher" ? "space-between" : "center"}; width: 100%; gap: ${this._mode === "immergo_teacher" ? "10px" : "40px"};">
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: ${this._mode === "immergo_teacher" || this._mode === "lars" ? "space-between" : "center"}; width: 100%; gap: ${this._mode === "immergo_teacher" || this._mode === "lars" ? "10px" : "40px"};">
           <div style="width: 100%; height: 120px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
              <audio-visualizer id="model-viz"></audio-visualizer>
           </div>
           
-          ${this._mode === "immergo_teacher"
+          ${this._mode === "immergo_teacher" || this._mode === "lars"
         ? `
             <div style="width: 100%; height: 250px; margin: 10px 0; position: relative;">
               <live-transcript></live-transcript>
@@ -591,6 +591,11 @@ class ViewChat extends HTMLElement {
         const transcriptEl = this.querySelector("live-transcript");
         if (transcriptEl) {
           transcriptEl.addOutputTranscript(response.data.text, response.data.finished);
+        }
+      } else if (response.type === MultimodalLiveResponseType.PROVENANCE) {
+        const transcriptEl = this.querySelector("live-transcript");
+        if (transcriptEl) {
+          transcriptEl.addProvenance(response.data);
         }
       }
     };
