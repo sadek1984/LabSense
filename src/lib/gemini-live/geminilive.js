@@ -31,6 +31,7 @@ export const MultimodalLiveResponseType = {
   ERROR: "ERROR",
   INPUT_TRANSCRIPTION: "INPUT_TRANSCRIPTION",
   OUTPUT_TRANSCRIPTION: "OUTPUT_TRANSCRIPTION",
+  PROVENANCE: "PROVENANCE",
 };
 
 /**
@@ -77,6 +78,10 @@ export class MultimodalLiveResponseMessage {
           text: data.serverContent.outputTranscription.text || "",
           finished: data.serverContent.outputTranscription.finished || false,
         };
+      } else if (data?.type === "provenance") {
+        console.log("📊 PROVENANCE event", data.provenance);
+        this.type = MultimodalLiveResponseType.PROVENANCE;
+        this.data = data.provenance;
       } else if (data?.toolCall) {
         console.log("🎯 🛠️ TOOL CALL response", data?.toolCall);
         this.type = MultimodalLiveResponseType.TOOL_CALL;

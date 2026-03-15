@@ -83,7 +83,7 @@ class GeminiLive:
         # Register LARS as a server-side tool.
         # Calls the /api/lars/query HTTP endpoint (same FastAPI process).
         @self.register_tool
-        def search_pesticide_data(question: str) -> dict:
+        def search_pesticide_data(question: str) -> str:
             """Search the pesticide residue database for any question."""
             try:
                 resp = _requests.post(
@@ -92,12 +92,9 @@ class GeminiLive:
                     timeout=30
                 )
                 data = resp.json()
-                result = {"answer": data.get("answer", str(data))}
-                if "provenance" in data:
-                    result["provenance"] = data["provenance"]
-                return result
+                return data.get("answer", str(data))
             except Exception as e:
-                return {"answer": f"LARS query failed: {e}"}
+                return f"LARS query failed: {e}"
 
     # ─────────────────────────────────────────────────────────────────────────
     def register_tool(self, func: Callable):
@@ -335,23 +332,16 @@ class GeminiLive:
                                             result = f"Tool error: {e}"
 
                                         # ✅ MUST use "output" key — Gemini SDK requires it
-                                        answer_str = result.get("answer", str(result)) if isinstance(result, dict) else str(result)
-                                        if isinstance(result, dict) and "provenance" in result:
-                                            print(f"📊 EMITTING provenance event: {result['provenance']}")
-                                            await event_queue.put({
-                                                "type": "provenance",
-                                                "provenance": result["provenance"]
-                                            })
                                         function_responses.append(types.FunctionResponse(
                                             name=func_name,
                                             id=fc.id,
-                                            response={"output": answer_str}
+                                            response={"output": str(result)}
                                         ))
                                         await event_queue.put({
                                             "type": "tool_call",
                                             "name": func_name,
                                             "args": args,
-                                            "result": answer_str
+                                            "result": str(result)
                                         })
                                     else:
                                         # Client-side tool — forward to browser
