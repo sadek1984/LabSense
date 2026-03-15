@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 # Configuration
 PROJECT_ID = get_project_id()
 LOCATION = os.getenv("LOCATION", "us-central1")
-MODEL = os.getenv("MODEL", "gemini-2.0-flash-001")
+MODEL = os.getenv("MODEL", "gemini-2.5-flash-native-audio-preview-12-2025")
 # Use a very long timeout for dev
 SESSION_TIME_LIMIT = int(os.getenv("SESSION_TIME_LIMIT", "180"))
 RECAPTCHA_SITE_KEY = os.getenv("RECAPTCHA_SITE_KEY")
@@ -180,17 +180,33 @@ async def lars_query(request: Request):
             return {"answer": "LARS engine has no query method available."}
         
         # Handle different return types intelligently
+        provenance = None
         if isinstance(result, tuple):
-            # If it's a tuple, assume first element is the answer text
+            # result[0] = response_text (str), result[1] = result_df (DataFrame)
             answer_text = str(result[0]) if len(result) > 0 else "No response"
+            if len(result) > 1:
+                try:
+                    import pandas as pd
+                    df = result[1]
+                    if isinstance(df, pd.DataFrame) and not df.empty:
+                        provenance = {
+                            "records":    len(df),
+                            "dimensions": df.columns.tolist(),
+                            "values":     df.iloc[:, 0].dropna().unique().tolist()[:5],
+                            "source":     "GC-MS/MS & LC-MS/MS Lab Results",
+                            "status":     "Verified lab data"
+                        }
+                except Exception as prov_err:
+                    print(f"⚠️ Provenance extraction failed (non-fatal): {prov_err}")
         elif isinstance(result, dict):
-            # If it's a dict, look for common answer fields
             answer_text = result.get("answer") or result.get("response") or result.get("text") or str(result)
         else:
-            # Just convert to string
             answer_text = str(result)
         
-        return {"answer": answer_text}
+        response = {"answer": answer_text}
+        if provenance:
+            response["provenance"] = provenance
+        return response
         
     except Exception as e:
         # Log the full error for debugging

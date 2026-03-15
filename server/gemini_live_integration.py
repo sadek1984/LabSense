@@ -52,33 +52,25 @@ LARS_TOOL = {
 # ---------------------------------------------------------------------------
 # TOOL HANDLER: Replace your old handler that had pattern matching
 # ---------------------------------------------------------------------------
-async def handle_tool_call(function_name: str, function_args: Dict[str, Any]) -> str:
+async def handle_tool_call(function_name: str, function_args: Dict[str, Any]) -> dict:
     """
     Handle Gemini Live tool calls.
-
-    OLD WAY (what we had before — DON'T do this):
-        if function_name == "search_pesticide_data":
-            intent = function_args.get("intent")  # e.g., "COUNT_SAMPLES_LIMIT"
-            if intent == "COUNT_SAMPLES_LIMIT":
-                # hardcoded SQL...
-            elif intent == "LIST_VIOLATIONS":
-                # hardcoded SQL...
-            # ❌ Limited to pre-defined patterns only
-
-    NEW WAY (transparent proxy):
-        Just forward the query to LARS. Done.
+    Returns a dict with:
+      - "answer": str  → what Gemini speaks back
+      - "provenance": dict (optional) → metadata for the frontend card
     """
     if function_name == "query_lars":
         query = function_args.get("query", "")
         return await call_lars(query)
 
-    return json.dumps({"error": f"Unknown function: {function_name}"})
+    return {"answer": f"Unknown function: {function_name}"}
 
 
-async def call_lars(query: str) -> str:
+async def call_lars(query: str) -> dict:
     """
     Call the LARS microservice with any query.
-    Returns a string that Gemini Live can speak back to the user.
+    Returns a dict with "answer" (str for Gemini to speak) and
+    optional "provenance" (dict for the frontend card).
     """
     try:
         async with aiohttp.ClientSession() as session:
@@ -89,16 +81,17 @@ async def call_lars(query: str) -> str:
             ) as response:
                 if response.status == 200:
                     data = await response.json()
-                    if data.get("success"):
-                        return data.get("answer", "No results found.")
-                    else:
-                        return data.get("error", "Query failed.")
+                    answer = data.get("answer", "No results found.")
+                    result = {"answer": answer}
+                    if "provenance" in data:
+                        result["provenance"] = data["provenance"]
+                    return result
                 else:
-                    return f"LARS service returned status {response.status}"
+                    return {"answer": f"LARS service returned status {response.status}"}
     except aiohttp.ClientError as e:
-        return f"Could not connect to LARS service: {e}"
+        return {"answer": f"Could not connect to LARS service: {e}"}
     except Exception as e:
-        return f"Error querying LARS: {e}"
+        return {"answer": f"Error querying LARS: {e}"}
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +147,7 @@ import google.generativeai as genai
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 
 model = genai.GenerativeModel(
-    model_name="gemini-2.0-flash-001",  # or whatever model you're using
+    model_name="gemini-2.0-flash-exp",  # or whatever model you're using
     system_instruction=LARS_SYSTEM_PROMPT,
     tools=[LARS_TOOL],
 )
