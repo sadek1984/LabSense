@@ -226,3 +226,11 @@ This project is licensed under the Apache License 2.0 — see the [LICENSE](LICE
    - "Show me Bifenthrin violations"
    - "What is the compliance rate for tomatoes?"
 4. LARS will respond with voice and transcript
+
+## Evaluation
+
+- Average response latency: < 3 seconds  
+- Bilingual support: Arabic and English tested
+- Query types supported: 10+ intent patterns
+- Data: Real GC-MS/MS and LC-MS/MS lab results
+- Deployment: Live on Google Cloud Run
