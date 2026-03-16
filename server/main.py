@@ -160,59 +160,16 @@ async def serve_spa(full_path: str):
     return FileResponse("dist/index.html")
 @app.post("/api/lars/query")
 async def lars_query(request: Request):
+    from server.lars_service import query_lars_remote
     data = await request.json()
     question = data.get("question", "") or data.get("query", "")
-    
-    try:
-        from server.lars_service import get_lars_engine
-        engine = get_lars_engine()
-        
-        # Try the most likely method first
-        if hasattr(engine, "process"):
-            result = engine.process(question)
-        elif hasattr(engine, "query"):  # Some engines use .query()
-            result = engine.query(question)
-        elif hasattr(engine, "ask"):     # Some use .ask()
-            result = engine.ask(question)
-        elif hasattr(engine, "process_query"):  # Some use .process_query()
-            result = engine.process_query(question)
-        else:
-            return {"answer": "LARS engine has no query method available."}
-        
-        # Handle different return types intelligently
-        provenance = None
-        if isinstance(result, tuple):
-            # result[0] = response_text (str), result[1] = result_df (DataFrame)
-            answer_text = str(result[0]) if len(result) > 0 else "No response"
-            if len(result) > 1:
-                try:
-                    import pandas as pd
-                    df = result[1]
-                    if isinstance(df, pd.DataFrame) and not df.empty:
-                        provenance = {
-                            "records":    len(df),
-                            "dimensions": df.columns.tolist(),
-                            "values":     df.iloc[:, 0].dropna().unique().tolist()[:5],
-                            "source":     "GC-MS/MS & LC-MS/MS Lab Results",
-                            "status":     "Verified lab data"
-                        }
-                except Exception as prov_err:
-                    print(f"⚠️ Provenance extraction failed (non-fatal): {prov_err}")
-        elif isinstance(result, dict):
-            answer_text = result.get("answer") or result.get("response") or result.get("text") or str(result)
-        else:
-            answer_text = str(result)
-        
-        response = {"answer": answer_text}
-        if provenance:
-            response["provenance"] = provenance
-        return response
-        
-    except Exception as e:
-        # Log the full error for debugging
-        import traceback
-        print(f"❌ LARS error: {traceback.format_exc()}")
-        return {"answer": f"Error querying LARS: {str(e)}"}
+    answer, provenance = await query_lars_remote(question)
+    response = {"answer": answer}
+    if provenance:
+        response["provenance"] = provenance
+    return response
+
+
 @app.post("/api/auth")
 @simpletrack("session_start")
 @limiter.limit(GLOBAL_RATE_LIMIT, key_func=get_global_key)
